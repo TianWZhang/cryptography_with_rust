@@ -200,15 +200,15 @@ mod tests {
     fn test_bytes_to_blocks() {
         let bytes = [
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x01, 0x01
+            0x00, 0x01, 0x01,
         ];
         assert_eq!(bytes_to_blocks(&bytes), [1, 2u128.pow(120)]);
 
         let bytes = [
             0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x01
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x01,
         ];
         assert_eq!(bytes_to_blocks(&bytes), [2u128.pow(120), 1, 256]);
     }
@@ -221,8 +221,10 @@ mod tests {
         let key = Vec::from_hex("fe47fcce5fc32665d2ae399e4eec72ba").expect("Couldn't parse key");
         let iv = Vec::from_hex("5adb9609dbaeb58cbd6e7275").expect("Couldn't parse IV");
         let expected_ct = Vec::from_hex("98f4826f05a265e6dd2be82db241c0fbbbf9ffb1c173aa83964b7cf5393043736365253ddbc5db8778371495da76d269e5db3e").expect("Couldn't parse ciphertext");
-        let aad = Vec::from_hex("88319d6e1d3ffa5f987199166c8a9b56c2aeba5a").expect("Couldn't parse AAD");
-        let expected_tag = Vec::from_hex("291ef1982e4defedaa2249f898556b47").expect("Couldn't parse tag");
+        let aad =
+            Vec::from_hex("88319d6e1d3ffa5f987199166c8a9b56c2aeba5a").expect("Couldn't parse AAD");
+        let expected_tag =
+            Vec::from_hex("291ef1982e4defedaa2249f898556b47").expect("Couldn't parse tag");
         let pt = Vec::from_hex("7c0e88c88899a779228465074797cd4c2e1498d259b54390b85e3eef1c02df60e743f1b840382c4bccaf3bafb4ca8429bea063").expect("Couldn't parse plaintext");
         let tag_length = 128;
 
@@ -237,10 +239,12 @@ mod tests {
     fn test_gcm_ad() {
         use hex::FromHex;
         // authenticated decryption that fails
-        let mut key = Vec::from_hex("f5a0b1639c67c7760109056a3a329804").expect("Couldn't parse key");
+        let mut key =
+            Vec::from_hex("f5a0b1639c67c7760109056a3a329804").expect("Couldn't parse key");
         let mut iv = Vec::from_hex("e1b75506d66509a52f0960f7").expect("Couldn't parse IV");
         let mut ct = Vec::from_hex("4d8738341660f7e49ca1ddf7db1255c1eca46b947fa80134340d364e611255194f3261413a82e763720ef81dedc8b10bed3b30").expect("Couldn't parse ciphertext");
-        let mut aad = Vec::from_hex("8421f67419d3d37cc9e97b712b8b0924").expect("Couldn't parse AAD");
+        let mut aad =
+            Vec::from_hex("8421f67419d3d37cc9e97b712b8b0924").expect("Couldn't parse AAD");
         let mut tag = Vec::from_hex("d7c586892b2e6ad60c2106a8").expect("Couldn't parse tag");
         let mut tag_length = 96;
 
@@ -253,14 +257,15 @@ mod tests {
         key = Vec::from_hex("fe47fcce5fc32665d2ae399e4eec72ba").expect("Couldn't parse key");
         iv = Vec::from_hex("5adb9609dbaeb58cbd6e7275").expect("Couldn't parse IV");
         ct = Vec::from_hex("98f4826f05a265e6dd2be82db241c0fbbbf9ffb1c173aa83964b7cf5393043736365253ddbc5db8778371495da76d269e5db3e").expect("Couldn't parse ciphertext");
-        aad = Vec::from_hex("88319d6e1d3ffa5f987199166c8a9b56c2aeba5a").expect("Couldn't parse AAD");
+        aad =
+            Vec::from_hex("88319d6e1d3ffa5f987199166c8a9b56c2aeba5a").expect("Couldn't parse AAD");
         tag = Vec::from_hex("291ef1982e4defedaa2249f898556b47").expect("Couldn't parse tag");
         let expected_pt = Vec::from_hex("7c0e88c88899a779228465074797cd4c2e1498d259b54390b85e3eef1c02df60e743f1b840382c4bccaf3bafb4ca8429bea063").expect("Couldn't parse plaintext");
         tag_length = 128;
 
         aes128 = AESScheme::new(&key);
         let result = gcm_authenticated_decrypt(&aes128, &iv, &ct, &aad, &tag, tag_length);
-        // assert!(result.is_ok());
-        // assert_eq!(result.unwrap(), expected_pt);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected_pt);
     }
 }
