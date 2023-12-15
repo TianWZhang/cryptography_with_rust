@@ -9,7 +9,20 @@ name = "hasher"
 path = "examples/file_hasher.rs"
 doc = false
 
+[[bin]]
+name = "birthday_attack_on_sha256"
+path = "examples/birthday_attack_on_sha256.rs"
+doc = false
+
 [dependencies]
+num = "0.4.1"
 
 [dev-dependencies]
 hex = "0.4.3"
+criterion = "0.5.1"
+ring = "0.17.7"
+
+
+[[bench]]
+name = "bench_sha256"
+harness = false

@@ -1,6 +1,6 @@
-mod aes_cbc;
-mod aes_ecb;
-mod aes_gcm;
+pub mod aes_cbc;
+pub mod aes_ecb;
+pub mod aes_gcm;
 mod constants;
 
 use constants::*;

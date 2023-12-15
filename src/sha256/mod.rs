@@ -36,7 +36,7 @@ impl Sha256 {
     fn update_block(&mut self, block: &[u8; BLOCK_SIZE]) {
         let mut w = [0u32; BLOCK_SIZE];
         for i in 0..16 {
-            w[i] = bytes_to_u32(&block[4 * i..4 * (i + 1)]);
+            w[i] = u32::from_be_bytes(block[4 * i..4 * (i + 1)].try_into().unwrap());
         }
         for i in 16..BLOCK_SIZE {
             let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
@@ -143,16 +143,6 @@ impl Sha256 {
             digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7]
         )
     }
-}
-
-/// bytes is in big endian order
-fn bytes_to_u32(bytes: &[u8]) -> u32 {
-    assert!(bytes.len() == 4);
-    let mut res = 0;
-    for i in 0..4 {
-        res |= (bytes[i] as u32) << (8 * (3 - i));
-    }
-    res
 }
 
 #[cfg(test)]
