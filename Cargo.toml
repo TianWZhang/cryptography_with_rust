@@ -3,6 +3,7 @@ name = "cryptography_with_rust"
 version = "0.1.0"
 authors = ["Zhang Tianwei <zhangtianwei1015@gmail.com>"]
 edition = "2021"
+autoexamples = false
 
 [[bin]]
 name = "hasher"
