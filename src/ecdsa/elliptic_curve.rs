@@ -4,19 +4,27 @@ A generic elliptic curve is defined as `y^2 = x^3 + ax + b mod p`, and in this c
 - `4 a^3 + 27 b^2 != 0`
 */
 
+use std::ops::Rem;
 use super::finite_field::FiniteField;
-use num::bigint::BigUint;
+use num_bigint::BigUint;
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Point {
     Coor(BigUint, BigUint),
-    Identity,
+    Identity
+}
+
+#[derive(Debug)]
+pub enum PointError {
+    CompressIdentity,
+    UnsupportedPrime,
+    InvalidCompressedPoint
 }
 
 #[derive(Debug)]
 pub enum EllipticCurveError {
     InvalidPoint(Point),
-    InvalidScalar(BigUint),
+    InvalidScalar(BigUint)
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -27,8 +35,68 @@ pub struct EllipticCurve {
 }
 
 impl EllipticCurve {
+    fn discriminant(a: &BigUint, b: &BigUint) -> BigUint {
+        let a_cubic  = a.pow(3);
+        let b_sqaure = b.pow(2);
+        BigUint::from(4u32) * a_cubic + BigUint::from(27u32) * b_sqaure
+    }
+
     pub fn new(a: BigUint, b: BigUint, p: BigUint) -> Self {
+        if Self::discriminant(&a, &b) == BigUint::from(0u32) {
+            panic!("The elliptic curve is not smooth");
+        }
         Self { a, b, p }
+    }
+
+    pub fn compress(point: &Point) -> Result<String, PointError> {
+        match point {
+            Point::Identity => Err(PointError::CompressIdentity),
+            Point::Coor(x, y) => {
+                let mut prefix = if y.rem(2u8) == 0u32.into() {
+                    String::from("02")
+                } else {
+                    String::from("03")
+                };
+                let hex_x = format!("{:x}", x);
+                prefix.push_str(&hex_x);
+                Ok(prefix)
+            }
+        }
+    }
+
+    /// We require p mod 4 == 3 as
+    /// there is an efficient sqaqure root algorithm for such prime p
+    pub fn uncompress(&self, point: &str) -> Result<Point, PointError> {
+        if (&self.p).rem(4u8) != 3u32.into() {
+            return Err(PointError::UnsupportedPrime);
+        }
+        if !point.starts_with("02") && !point.starts_with("03") {
+            return Err(PointError::InvalidCompressedPoint);
+        }
+
+        let x = BigUint::parse_bytes(
+            &point[2..].as_bytes(),
+            16,
+        );
+        if x.is_none() {
+            return Err(PointError::InvalidCompressedPoint);
+        }
+
+        let x = x.unwrap();
+        let x_cubic = x.modpow(&3u32.into(), &self.p);
+        let fp = FiniteField::new(self.p.clone());
+        let ax = fp.mult(&self.a, &x);
+        let mut y_square = fp.add(&x_cubic, &ax);
+        y_square = fp.add(&y_square, &self.b);
+        let pe = (&self.p + BigUint::from(1u32)) / 4u32;
+        let mut y = y_square.modpow(&pe, &self.p);
+
+        let sign_y = BigUint::parse_bytes(&point[..2].as_bytes(), 16).unwrap() - 2u32;
+        // if the parity does not match, y should be the other root
+        if (&y).rem(2u32) != sign_y {
+            y = fp.inv_add(&y);
+        }
+        Ok(Point::Coor(x, y))
     }
 
     pub fn is_on_curve(&self, a: &Point) -> bool {
@@ -45,6 +113,8 @@ impl EllipticCurve {
         }
     }
 
+    /// x_3 = s^2 - x_1 - x_2
+    /// y_3 = s * (x_1 - x_3) - y_1
     fn compute_add_coor(
         &self,
         x1: &BigUint,
@@ -52,9 +122,9 @@ impl EllipticCurve {
         x2: &BigUint,
         s: &BigUint,
     ) -> (BigUint, BigUint) {
-        let s2 = s.modpow(&2u32.into(), &self.p);
+        let s_sqaure = s.modpow(&2u32.into(), &self.p);
         let fp = FiniteField::new(self.p.clone());
-        let mut x3 = fp.subtract(&s2, x1);
+        let mut x3 = fp.subtract(&s_sqaure, x1);
         x3 = fp.subtract(&x3, x2);
 
         let mut y3 = fp.subtract(x1, &x3);
@@ -288,7 +358,8 @@ mod tests {
         /*
           y^2 = x^3 + 7 mod p (large)
 
-          p = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFFFC2F
+          p = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFFFC2F 
+          p mod 4 == 3
           n = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE BAAEDCE6 AF48A03B BFD25E8C D0364141
         G = (
             x = 79BE667E F9DCBBAC 55A06295 CE870B07 029BFCDB 2DCE28D9 59F2815B 16F81798,
@@ -339,5 +410,38 @@ mod tests {
 
         let res = ec.scalar_mult(&p, &n).unwrap();
         assert_eq!(res, Point::Identity);
+    }
+
+    #[test]
+    fn test_compress_and_uncompress() {
+        let p = BigUint::parse_bytes(
+            b"FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F",
+            16,
+        )
+        .expect("could not convert p");
+
+        let gx = BigUint::parse_bytes(
+            b"79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798",
+            16,
+        )
+        .expect("could not convert gx");
+
+        let gy = BigUint::parse_bytes(
+            b"483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8",
+            16,
+        )
+        .expect("could not convert gy");
+
+        let ec = EllipticCurve {
+            a: BigUint::from(0u32),
+            b: BigUint::from(7u32),
+            p,
+        };
+
+        let g = Point::Coor(gx, gy);
+
+        let compressed_point = EllipticCurve::compress(&g).unwrap();
+        let uncompressed_g = ec.uncompress(&compressed_point).unwrap();
+        assert_eq!(g, uncompressed_g);
     }
 }

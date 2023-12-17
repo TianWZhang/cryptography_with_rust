@@ -1,4 +1,5 @@
-use num::{bigint::BigUint, Integer};
+use std::ops::Rem;
+use num_bigint::BigUint;
 
 pub struct FiniteField {
     p: BigUint,
@@ -10,18 +11,19 @@ impl FiniteField {
     }
 
     pub fn add(&self, a: &BigUint, b: &BigUint) -> BigUint {
-        (a + b).mod_floor(&self.p)
+        (a + b).rem(&self.p)
     }
 
     pub fn mult(&self, a: &BigUint, b: &BigUint) -> BigUint {
-        (a * b).mod_floor(&self.p)
+        (a * b).rem(&self.p)
     }
 
     pub fn inv_add(&self, a: &BigUint) -> BigUint {
         if *a == BigUint::from(0u32) {
             return a.clone();
         }
-        &self.p - a.mod_floor(&self.p)
+        // &self.p - a.mod_floor(&self.p)
+        &self.p - a.rem(&self.p)
     }
 
     pub fn subtract(&self, a: &BigUint, b: &BigUint) -> BigUint {
