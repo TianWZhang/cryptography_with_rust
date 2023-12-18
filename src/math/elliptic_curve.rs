@@ -5,7 +5,7 @@ A generic elliptic curve is defined as `y^2 = x^3 + ax + b mod p`, and in this c
 */
 
 use std::ops::Rem;
-use super::finite_field::FiniteField;
+use super::finite_field::FpBigUint;
 use num_bigint::BigUint;
 
 #[derive(PartialEq, Clone, Debug)]
@@ -84,7 +84,7 @@ impl EllipticCurve {
 
         let x = x.unwrap();
         let x_cubic = x.modpow(&3u32.into(), &self.p);
-        let fp = FiniteField::new(self.p.clone());
+        let fp = FpBigUint::new(self.p.clone());
         let ax = fp.mult(&self.a, &x);
         let mut y_square = fp.add(&x_cubic, &ax);
         y_square = fp.add(&y_square, &self.b);
@@ -94,7 +94,7 @@ impl EllipticCurve {
         let sign_y = BigUint::parse_bytes(&point[..2].as_bytes(), 16).unwrap() - 2u32;
         // if the parity does not match, y should be the other root
         if (&y).rem(2u32) != sign_y {
-            y = fp.inv_add(&y);
+            y = fp.neg(&y);
         }
         Ok(Point::Coor(x, y))
     }
@@ -105,7 +105,7 @@ impl EllipticCurve {
             Point::Coor(x, y) => {
                 let y2 = y.modpow(&BigUint::from(2u32), &self.p);
                 let x3 = x.modpow(&BigUint::from(3u32), &self.p);
-                let fp = FiniteField::new(self.p.clone());
+                let fp = FpBigUint::new(self.p.clone());
                 let ax = fp.mult(&self.a, x);
                 let x3_plus_ax = fp.add(&x3, &ax);
                 y2 == fp.add(&x3_plus_ax, &self.b)
@@ -123,7 +123,7 @@ impl EllipticCurve {
         s: &BigUint,
     ) -> (BigUint, BigUint) {
         let s_sqaure = s.modpow(&2u32.into(), &self.p);
-        let fp = FiniteField::new(self.p.clone());
+        let fp = FpBigUint::new(self.p.clone());
         let mut x3 = fp.subtract(&s_sqaure, x1);
         x3 = fp.subtract(&x3, x2);
 
@@ -151,7 +151,7 @@ impl EllipticCurve {
             (Point::Identity, _) => Ok(b.clone()),
             (_, Point::Identity) => Ok(a.clone()),
             (Point::Coor(x1, y1), Point::Coor(x2, y2)) => {
-                let fp = FiniteField::new(self.p.clone());
+                let fp = FpBigUint::new(self.p.clone());
                 // Check whether they are additive inverse to each other
                 if x1 == x2 && fp.add(y1, y2) == 0u32.into() {
                     return Ok(Point::Identity);
@@ -176,7 +176,7 @@ impl EllipticCurve {
                     return Point::Identity;
                 }
 
-                let fp = FiniteField::new(self.p.clone());
+                let fp = FpBigUint::new(self.p.clone());
                 // s = (3 * x1 ^ 2 + a) / (2 * y1) mod p
                 let mut numerator = fp.mult(x1, x1);
                 numerator = fp.mult(&3u32.into(), &numerator);

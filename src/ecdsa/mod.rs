@@ -1,10 +1,7 @@
-pub mod elliptic_curve;
-pub mod finite_field;
-
 use std::ops::Rem;
 use num_bigint::{BigUint, RandBigInt};
 use crate::sha256::Sha256;
-use self::{elliptic_curve::{EllipticCurve, Point}, finite_field::FiniteField};
+use crate::math::{elliptic_curve::{EllipticCurve, Point}, finite_field::FpBigUint};
 
 pub struct ECDSA {
     elliptic_curve: EllipticCurve,
@@ -72,7 +69,7 @@ impl ECDSA {
         match r_point {
             Point::Identity => Err(ECDSAError::OperationFailure("Random Point R is the identity".into())),
             Point::Coor(r, _) => { // r = x_R
-                let fq = FiniteField::new(self.q.clone());
+                let fq = FpBigUint::new(self.q.clone());
                 let mut s = fq.mult(&r, &sk);
                 s = fq.add(&s, &hash);
                 let k_e_inv = fq.inv_mult(&k_e);
@@ -94,7 +91,7 @@ impl ECDSA {
     pub fn verify(&self, msg: &str, pk: &Point, signature: &(BigUint, BigUint)) -> Result<bool, ECDSAError> {
         let hash = self.gen_hash_less_than(msg);
         let (r, s) = signature;
-        let fq = FiniteField::new(self.q.clone());
+        let fq = FpBigUint::new(self.q.clone());
         let s_inv = fq.inv_mult(s);
         let u1 = fq.mult(&s_inv, &hash);
         let u2 = fq.mult(&s_inv, r);
