@@ -4,27 +4,27 @@ A generic elliptic curve is defined as `y^2 = x^3 + ax + b mod p`, and in this c
 - `4 a^3 + 27 b^2 != 0`
 */
 
-use std::ops::Rem;
 use super::finite_field::FpBigUint;
 use num_bigint::BigUint;
+use std::ops::Rem;
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum Point {
     Coor(BigUint, BigUint),
-    Identity
+    Identity,
 }
 
 #[derive(Debug)]
 pub enum PointError {
     CompressIdentity,
     UnsupportedPrime,
-    InvalidCompressedPoint
+    InvalidCompressedPoint,
 }
 
 #[derive(Debug)]
 pub enum EllipticCurveError {
     InvalidPoint(Point),
-    InvalidScalar(BigUint)
+    InvalidScalar(BigUint),
 }
 
 #[derive(PartialEq, Clone, Debug)]
@@ -36,7 +36,7 @@ pub struct EllipticCurve {
 
 impl EllipticCurve {
     fn discriminant(a: &BigUint, b: &BigUint) -> BigUint {
-        let a_cubic  = a.pow(3);
+        let a_cubic = a.pow(3);
         let b_sqaure = b.pow(2);
         BigUint::from(4u32) * a_cubic + BigUint::from(27u32) * b_sqaure
     }
@@ -74,10 +74,7 @@ impl EllipticCurve {
             return Err(PointError::InvalidCompressedPoint);
         }
 
-        let x = BigUint::parse_bytes(
-            &point[2..].as_bytes(),
-            16,
-        );
+        let x = BigUint::parse_bytes(&point[2..].as_bytes(), 16);
         if x.is_none() {
             return Err(PointError::InvalidCompressedPoint);
         }
@@ -358,7 +355,7 @@ mod tests {
         /*
           y^2 = x^3 + 7 mod p (large)
 
-          p = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFFFC2F 
+          p = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE FFFFFC2F
           p mod 4 == 3
           n = FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFE BAAEDCE6 AF48A03B BFD25E8C D0364141
         G = (

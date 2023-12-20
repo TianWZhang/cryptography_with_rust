@@ -1,59 +1,48 @@
-use std::{ops::{Neg, Sub, Add, Mul, Index, IndexMut}, process::Output};
-
 use super::finite_field::FiniteRing;
+use std::ops::{Add, Index, IndexMut, Neg, Sub};
 
-pub struct Matrix<T, const X: usize, const Y: usize> 
-where 
-    T: FiniteRing + Clone + Default
-{
-    entries: [[T; X]; Y]
+pub struct Matrix<T, const M: usize, const N: usize> {
+    entries: [[T; N]; M],
 }
 
 #[derive(Clone, Copy)]
-pub struct Vector<T, const D: usize> 
-where 
-    T: FiniteRing + Clone + Default + Copy
-{
-    entries: [T; D]
+pub struct Vector<T, const D: usize> {
+    entries: [T; D],
 }
 
 impl<T, const D: usize> Neg for Vector<T, D>
-where 
-    T: FiniteRing + Clone + Default + Copy + Neg<Output = T>
+where
+    T: FiniteRing + Clone + Default + Copy,
 {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
         let mut entries = [T::default(); D];
         for i in 0..D {
-            entries[i] = -self.entries[i]; 
+            entries[i] = -self.entries[i];
         }
-        Self {
-            entries
-        }
+        Self { entries }
     }
 }
 
 impl<T, const D: usize> Add for Vector<T, D>
-where 
-    T: FiniteRing + Clone + Default + Copy + Add<Output = T>
+where
+    T: FiniteRing + Clone + Default + Copy,
 {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
         let mut entries = [T::default(); D];
         for i in 0..D {
-            entries[i] = self.entries[i] + rhs.entries[i]; 
+            entries[i] = self.entries[i] + rhs.entries[i];
         }
-        Self {
-            entries
-        }
+        Self { entries }
     }
 }
 
 impl<T, const D: usize> Sub for Vector<T, D>
-where 
-    T: FiniteRing + Clone + Default + Copy + Add<Output = T> + Neg<Output = T>
+where
+    T: FiniteRing + Clone + Default + Copy,
 {
     type Output = Self;
 
@@ -63,12 +52,12 @@ where
 }
 
 impl<T, const D: usize> Vector<T, D>
-where 
-    T: FiniteRing + Clone +  Default + Copy + Mul<Output = T>
+where
+    T: FiniteRing + Clone + Copy + Default,
 {
     pub fn zero() -> Self {
         Self {
-            entries: [T::default(); D]
+            entries: [T::ZERO; D],
         }
     }
 
@@ -77,7 +66,7 @@ where
     }
 
     pub fn dot(&self, other: &Self) -> T {
-        let mut res = T::zero();
+        let mut res = T::ZERO;
 
         for i in 0..D {
             res += self.entries[i] * other.entries[i];
@@ -87,7 +76,7 @@ where
 
     pub fn basis_vector(index: usize) -> Self {
         let mut res = Self::zero();
-        res[index] = T::one();
+        res[index] = T::ONE;
         res
     }
 
@@ -100,10 +89,7 @@ where
     }
 }
 
-impl<T, const D: usize> Index<usize> for Vector<T, D>
-where 
-    T: FiniteRing + Clone +  Default + Copy
-{
+impl<T, const D: usize> Index<usize> for Vector<T, D> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -111,28 +97,48 @@ where
     }
 }
 
-impl<T, const D: usize> IndexMut<usize> for Vector<T, D>
-where 
-    T: FiniteRing + Clone +  Default + Copy
-{
+impl<T, const D: usize> IndexMut<usize> for Vector<T, D> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.entries[index]
     }
 }
 
-
-impl<K, const X: usize, const Y: usize> Matrix<K, X, Y>
-where 
-    K: FiniteRing + Clone +  Default + Copy
+impl<T, const M: usize, const N: usize> Matrix<T, M, N>
+where
+    T: FiniteRing + Clone + Default + Copy,
 {
-    pub fn new() -> Self {
+    pub fn zero() -> Self {
         Self {
-            entries: [[K::default(); X]; Y]
+            entries: [[T::ZERO; N]; M],
         }
     }
 
     pub fn dimensions() -> (usize, usize) {
-        (X, Y)
+        (M, N)
+    }
+
+    pub fn row(&self, index: usize) -> Vector<T, N> {
+        Vector {
+            entries: self.entries[index],
+        }
+    }
+
+    pub fn column(&self, index: usize) -> Vector<T, M> {
+        let mut entries = [T::ZERO; M];
+
+        for i in 0..M {
+            entries[i] = self.entries[i][index].clone();
+        }
+
+        Vector { entries }
+    }
+
+    pub fn mult_vec(&self, v: Vector<T, N>) -> Vector<T, M> {
+        let mut entries = [T::ZERO; M];
+
+        for i in 0..M {
+            entries[i] = v.dot(&self.row(i));
+        }
+        Vector { entries }
     }
 }
-

@@ -1,13 +1,25 @@
-use std::ops::{Rem, Add, Neg, Sub, Mul, Div, AddAssign};
 use num_bigint::BigUint;
+use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
 
-pub trait FiniteRing: Sized + Eq + Add + Neg + Sub + Mul + AddAssign {
-    fn zero() -> Self;
-    fn one() -> Self;
+pub trait FiniteRing:
+    Sized
+    + Eq
+    + Add<Output = Self>
+    + Neg<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + AddAssign
+{
+    const ZERO: Self;
+    const ONE: Self;
 }
 
 pub trait FiniteField: FiniteRing + Div {
+    /// The multiplicative group of the finite field Fp^{*} is cyclic.
+    /// Return the generator of Fp^{*}.
+    fn get_generator() -> Self;
     fn inv(&self) -> Result<Self, String>;
+    fn order() -> usize;
 }
 
 pub struct FpBigUint {
@@ -20,19 +32,18 @@ impl FpBigUint {
     }
 
     pub fn add(&self, a: &BigUint, b: &BigUint) -> BigUint {
-        (a + b).rem(&self.p)
+        (a + b) % &self.p
     }
 
     pub fn mult(&self, a: &BigUint, b: &BigUint) -> BigUint {
-        (a * b).rem(&self.p)
+        (a * b) % &self.p
     }
 
     pub fn neg(&self, a: &BigUint) -> BigUint {
         if *a == BigUint::from(0u32) {
             return a.clone();
         }
-        // &self.p - a.mod_floor(&self.p)
-        &self.p - a.rem(&self.p)
+        &self.p - a % &self.p
     }
 
     pub fn subtract(&self, a: &BigUint, b: &BigUint) -> BigUint {
@@ -45,9 +56,146 @@ impl FpBigUint {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub struct Fp<const P: u64> {
+    val: u64,
+}
+
+impl<const P: u64> Add for Fp<P> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            val: (self.val + rhs.val) % P,
+        }
+    }
+}
+
+impl<const P: u64> Mul for Fp<P> {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self {
+            val: (self.val * rhs.val) % P,
+        }
+    }
+}
+
+impl<const P: u64> Neg for Fp<P> {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        if self.val == 0 {
+            return Self::ZERO;
+        }
+
+        Self { val: P - self.val }
+    }
+}
+
+impl<const P: u64> Sub for Fp<P> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self + (-rhs)
+    }
+}
+
+impl<const P: u64> AddAssign for Fp<P> {
+    fn add_assign(&mut self, rhs: Self) {
+        self.val = (self.val + rhs.val) % P;
+    }
+}
+
+impl<const P: u64> FiniteRing for Fp<P> {
+    const ZERO: Self = Self { val: 0 };
+    const ONE: Self = Self { val: 1 };
+}
+
+impl<const P: u64> Div for Fp<P> {
+    type Output = Result<Self, String>;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        Ok(self * (rhs.inv()?))
+    }
+}
+
+impl<const P: u64> FiniteField for Fp<P> {
+    fn get_generator() -> Self {
+        if P == 3329 {
+            return Self::from(3);
+        }
+        for i in 1..P {
+            if is_primitive_root(i, P) {
+                return Self {val: i};
+            }
+        }
+        unreachable!("P is not a prime number")
+    }
+
+    fn inv(&self) -> Result<Self, String> {
+        if self == &Self::ZERO {
+            return Err("Zero has no inverse".to_string());
+        }
+
+        if P == 3329 {
+            Ok(INV_3329[self.val as usize].into())
+        } else {
+            let val = BigUint::from(self.val)
+                .modpow(&(BigUint::from(P - 2)), &BigUint::from(P))
+                .try_into()
+                .map_err(|_| "Cannot transform a BigUint to u64".to_string())?;
+            Ok(Self { val })
+        }
+    }
+
+    fn order() -> usize {
+        P as usize
+    }
+}
+
+impl<const P: u64> From<u64> for Fp<P> {
+    fn from(val: u64) -> Self {
+        Self { val: val % P }
+    }
+}
+
+fn prime_factors(mut n: u64) -> Vec<u64> {
+    let mut res = vec![];
+    let mut i = 2;
+    while i * i <= n {
+        if n % i == 0 {
+            res.push(i);
+            n /= i;
+            while n % i == 0 {
+                n /= i;
+            }
+        }
+        i += 1;
+    }
+    if n > 1 {
+        res.push(n);
+    }
+    res
+}
+
+fn is_primitive_root(val: u64, p: u64) -> bool {
+    let t: u64 = BigUint::from(val).modpow(&BigUint::from(p - 1), &BigUint::from(p)).try_into().unwrap();
+    if t != 1 {
+        return false;
+    }
+    for i in prime_factors(p - 1) {
+        let t: u64 = BigUint::from(val).modpow(&BigUint::from((p - 1) / i), &BigUint::from(p)).try_into().unwrap();
+        if t == 1 {
+            return false;
+        }
+    }
+    true
+}
+
 /// Inversion table on the Finite Field F_3329
 /// INV_3329[i] = i^-1 mod 3329
-const INV_3329: [usize; 3329] = [
+const INV_3329: [u64; 3329] = [
     0, 1, 1665, 1110, 2497, 666, 555, 2378, 2913, 370, 333, 908, 1942, 3073, 1189, 222, 3121, 1175,
     185, 2453, 1831, 3012, 454, 579, 971, 799, 3201, 1233, 2259, 574, 111, 1933, 3225, 2522, 2252,
     2473, 1757, 90, 2891, 2134, 2580, 406, 3170, 2400, 227, 74, 1954, 425, 2150, 2242, 2064, 2611,
@@ -255,104 +403,10 @@ const INV_3329: [usize; 3329] = [
     3272, 1664, 3328,
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct F3329 {
-    val: usize,
-}
-
-impl Add for F3329 {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            val: (self.val + rhs.val) % Self::order()
-        }
-    }
-}
-
-impl Neg for F3329 {
-    type Output = Self;
-
-    fn neg(self) -> Self::Output {
-        Self {
-            val: Self::order() - self.val
-        }
-    }
-}
-
-impl Sub for F3329 {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        self + (-rhs)
-    }
-}
-
-impl Mul for F3329 {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        Self {
-            val: (self.val * rhs.val) % Self::order()
-        }
-    }
-}
-
-impl Div for F3329 {
-    type Output = Result<Self, String>;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        Ok(self * (rhs.inv()?))
-    }
-}
-
-impl From<usize> for F3329 {
-    fn from(val: usize) -> Self {
-        Self {
-            val
-        }
-    }
-} 
-
-impl AddAssign for F3329 {
-    fn add_assign(&mut self, rhs: Self) {
-        self.val = (self.val + rhs.val) % Self::order();
-    }
-} 
-
-impl FiniteRing for F3329 {
-    fn zero() -> Self {
-        Self {
-            val: 0
-        }
-    }
-
-    fn one() -> Self {
-        Self {
-            val: 1
-        }
-    }
-}
-
-impl FiniteField for F3329 {
-    fn inv(&self) -> Result<Self, String> {
-        if self == &Self::zero() {
-            return Err("Div by zero".to_string());
-        }
-        Ok(INV_3329[self.val].into())
-    }
-}
-
-
-impl F3329 {
-    #[inline]
-    pub const fn order() -> usize {
-        3329
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::math::F3329;
+
     use super::*;
 
     #[test]
@@ -418,5 +472,27 @@ mod tests {
 
         let res = f11.mult(&a, &a_inv);
         assert_eq!(res, BigUint::from(1u32));
+    }
+
+    #[test]
+    fn test_prime_factors() {
+        let mut n = 128;
+        assert_eq!(prime_factors(n), vec![2]);
+
+        n = 182;
+        assert_eq!(prime_factors(n), vec![2, 7, 13]);
+
+        n = 1;
+        assert_eq!(prime_factors(n), vec![]);
+    }
+
+    #[test]
+    fn test_generator() {
+        assert_eq!(Fp::<17>::get_generator(), Fp::<17>::from(3));
+        assert_eq!(Fp::<113>::get_generator(), Fp::<113>::from(3));
+        assert_eq!(Fp::<22273>::get_generator(), Fp::<22273>::from(5));
+        assert_eq!(Fp::<31489>::get_generator(), Fp::<31489>::from(7));
+        assert_eq!(Fp::<26881>::get_generator(), Fp::<26881>::from(11));
+        assert_eq!(F3329::get_generator(), F3329::from(3));
     }
 }

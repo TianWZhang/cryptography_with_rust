@@ -24,7 +24,6 @@ hex = "0.4.3"
 criterion = "0.5.1"
 ring = "0.17.7"
 
-
 [[bench]]
 name = "bench_sha256"
 harness = false

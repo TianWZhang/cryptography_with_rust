@@ -1,18 +1,21 @@
-use std::ops::Rem;
-use num_bigint::{BigUint, RandBigInt};
+use crate::math::{
+    elliptic_curve::{EllipticCurve, Point},
+    finite_field::FpBigUint,
+};
 use crate::sha256::Sha256;
-use crate::math::{elliptic_curve::{EllipticCurve, Point}, finite_field::FpBigUint};
+use num_bigint::{BigUint, RandBigInt};
+use std::ops::Rem;
 
 pub struct ECDSA {
     elliptic_curve: EllipticCurve,
-    g: Point, // group generator
-    q: BigUint // group order
+    g: Point,   // group generator
+    q: BigUint, // group order
 }
 
 #[derive(Debug)]
 pub enum ECDSAError {
     BadArgument(String),
-    OperationFailure(String)
+    OperationFailure(String),
 }
 
 impl ECDSA {
@@ -21,7 +24,7 @@ impl ECDSA {
         Self {
             elliptic_curve,
             g,
-            q
+            q,
         }
     }
 
@@ -55,7 +58,6 @@ impl ECDSA {
         hash.rem(&self.q)
     }
 
-
     /// R = k_e * g -> r = x_R
     /// s = (hash(msg) + sk * r) * k_e^(-1) mod q
     pub fn sign(&self, msg: &str, sk: &BigUint) -> Result<(BigUint, BigUint), ECDSAError> {
@@ -63,12 +65,19 @@ impl ECDSA {
 
         let mut rng = rand::thread_rng();
         let k_e = rng.gen_biguint_range(&BigUint::from(1u32), &self.q); // random ephemeral key
-        let r_point = self.elliptic_curve.scalar_mult(&self.g, &k_e).map_err(|_| { // R = k_e * g
-            ECDSAError::OperationFailure("Error computing Random Point R".into())
-        })?;
+        let r_point = self
+            .elliptic_curve
+            .scalar_mult(&self.g, &k_e)
+            .map_err(|_| {
+                // R = k_e * g
+                ECDSAError::OperationFailure("Error computing Random Point R".into())
+            })?;
         match r_point {
-            Point::Identity => Err(ECDSAError::OperationFailure("Random Point R is the identity".into())),
-            Point::Coor(r, _) => { // r = x_R
+            Point::Identity => Err(ECDSAError::OperationFailure(
+                "Random Point R is the identity".into(),
+            )),
+            Point::Coor(r, _) => {
+                // r = x_R
                 let fq = FpBigUint::new(self.q.clone());
                 let mut s = fq.mult(&r, &sk);
                 s = fq.add(&s, &hash);
@@ -88,33 +97,42 @@ impl ECDSA {
     /// P = u1 * g + u2 * pk mod q = (xp, yp)
     /// if r == xp then verified!
     ///
-    pub fn verify(&self, msg: &str, pk: &Point, signature: &(BigUint, BigUint)) -> Result<bool, ECDSAError> {
+    pub fn verify(
+        &self,
+        msg: &str,
+        pk: &Point,
+        signature: &(BigUint, BigUint),
+    ) -> Result<bool, ECDSAError> {
         let hash = self.gen_hash_less_than(msg);
         let (r, s) = signature;
         let fq = FpBigUint::new(self.q.clone());
         let s_inv = fq.inv_mult(s);
         let u1 = fq.mult(&s_inv, &hash);
         let u2 = fq.mult(&s_inv, r);
-        let u1g = self.elliptic_curve.scalar_mult(&self.g, &u1).map_err(|_| {
-            ECDSAError::OperationFailure("Error computing u1 * g".into())
-        })?;
-        let u2pk = self.elliptic_curve.scalar_mult(pk, &u2).map_err(|_| {
-            ECDSAError::OperationFailure("Error computing u2 * pk".into())
-        })?;
-        let p_point = self.elliptic_curve.add(&u1g, &u2pk).map_err(|_| {
-            ECDSAError::OperationFailure("Error computing u1 * g + u2 * pk".into())
-        })?;
+        let u1g = self
+            .elliptic_curve
+            .scalar_mult(&self.g, &u1)
+            .map_err(|_| ECDSAError::OperationFailure("Error computing u1 * g".into()))?;
+        let u2pk = self
+            .elliptic_curve
+            .scalar_mult(pk, &u2)
+            .map_err(|_| ECDSAError::OperationFailure("Error computing u2 * pk".into()))?;
+        let p_point = self
+            .elliptic_curve
+            .add(&u1g, &u2pk)
+            .map_err(|_| ECDSAError::OperationFailure("Error computing u1 * g + u2 * pk".into()))?;
 
         match p_point {
-            Point::Identity => Err(ECDSAError::OperationFailure("Point P is the identity".into())),
-            Point::Coor(xp, _) => { // xp = x_P
+            Point::Identity => Err(ECDSAError::OperationFailure(
+                "Point P is the identity".into(),
+            )),
+            Point::Coor(xp, _) => {
+                // xp = x_P
                 Ok(xp.rem(&self.q) == *r) // xp == r mod q
             }
         }
-
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -122,12 +140,12 @@ mod test {
 
     #[test]
     fn test_sign_verify() {
-        let a =  BigUint::from(2u32);
+        let a = BigUint::from(2u32);
         let b = BigUint::from(2u32);
         let p = BigUint::from(17u32);
         let g = Point::Coor(BigUint::from(5u32), BigUint::from(1u32));
         let q = BigUint::from(19u32);
-        let ecdsa = ECDSA ::new(a, b, p, g, q);
+        let ecdsa = ECDSA::new(a, b, p, g, q);
 
         let sk = BigUint::from(7u32);
         let pk = ecdsa
@@ -135,9 +153,7 @@ mod test {
             .expect("Could not compute PubKey");
 
         let message = "Bob -> 1 BTC -> Alice";
-        let signature = ecdsa
-            .sign(message, &sk)
-            .expect("Could not sign");
+        let signature = ecdsa.sign(message, &sk).expect("Could not sign");
 
         let verify_result = ecdsa
             .verify(message, &pk, &signature)
@@ -148,12 +164,12 @@ mod test {
 
     #[test]
     fn test_sign_verify_tempered_message() {
-        let a =  BigUint::from(2u32);
+        let a = BigUint::from(2u32);
         let b = BigUint::from(2u32);
         let p = BigUint::from(17u32);
         let g = Point::Coor(BigUint::from(5u32), BigUint::from(1u32));
         let q = BigUint::from(19u32);
-        let ecdsa = ECDSA ::new(a, b, p, g, q);
+        let ecdsa = ECDSA::new(a, b, p, g, q);
 
         let sk = BigUint::from(7u32);
         let pk = ecdsa
@@ -161,9 +177,7 @@ mod test {
             .expect("Could not compute PubKey");
 
         let message = "Bob -> 1 BTC -> Alice";
-        let signature = ecdsa
-            .sign(message, &sk)
-            .expect("Could not sign");
+        let signature = ecdsa.sign(message, &sk).expect("Could not sign");
 
         let another_message = "Bob -> 2 BTC -> Alice";
 
@@ -179,12 +193,12 @@ mod test {
 
     #[test]
     fn test_sign_verify_tempered_signature() {
-        let a =  BigUint::from(2u32);
+        let a = BigUint::from(2u32);
         let b = BigUint::from(2u32);
         let p = BigUint::from(17u32);
         let g = Point::Coor(BigUint::from(5u32), BigUint::from(1u32));
         let q = BigUint::from(19u32);
-        let ecdsa = ECDSA ::new(a, b, p, g, q);
+        let ecdsa = ECDSA::new(a, b, p, g, q);
 
         let sk = BigUint::from(7u32);
         let pk = ecdsa
@@ -192,9 +206,7 @@ mod test {
             .expect("Could not compute PubKey");
 
         let message = "Bob -> 1 BTC -> Alice";
-        let (r, s) = ecdsa
-            .sign(message, &sk)
-            .expect("Could not sign");
+        let (r, s) = ecdsa.sign(message, &sk).expect("Could not sign");
         let tempered_signature = (
             (r + BigUint::from(1u32)).modpow(&BigUint::from(1u32), &ecdsa.q),
             s,
@@ -236,12 +248,12 @@ mod test {
         )
         .expect("could not convert gy");
 
-        let a =  BigUint::from(0u32);
+        let a = BigUint::from(0u32);
         let b = BigUint::from(7u32);
         let g = Point::Coor(gx, gy);
-        let ecdsa = ECDSA ::new(a, b, p, g, q);
+        let ecdsa = ECDSA::new(a, b, p, g, q);
 
-        let sk= BigUint::parse_bytes(
+        let sk = BigUint::parse_bytes(
             b"483ADB7726A3C4655DA4FBFC0E1208A8F017B448A68554199C47D08FFB10E4B9",
             16,
         )
@@ -250,11 +262,8 @@ mod test {
             .generate_public_key(&sk)
             .expect("Could not compute PubKey");
 
-
         let message = "Bob -> 1 BTC -> Alice";
-        let signature = ecdsa
-            .sign(message, &sk)
-            .expect("Could not sign");
+        let signature = ecdsa.sign(message, &sk).expect("Could not sign");
 
         let verify_result = ecdsa
             .verify(&message, &pk, &signature)
@@ -289,12 +298,12 @@ mod test {
         )
         .expect("could not convert gy");
 
-        let a =  BigUint::from(0u32);
+        let a = BigUint::from(0u32);
         let b = BigUint::from(7u32);
         let g = Point::Coor(gx, gy);
-        let ecdsa = ECDSA ::new(a, b, p, g, q);
+        let ecdsa = ECDSA::new(a, b, p, g, q);
 
-        let sk= BigUint::parse_bytes(
+        let sk = BigUint::parse_bytes(
             b"483ADB7726A3C4655DA4FBFC0E1208A8F017B448A68554199C47D08FFB10E4B9",
             16,
         )
@@ -303,11 +312,8 @@ mod test {
             .generate_public_key(&sk)
             .expect("Could not compute PubKey");
 
-
         let message = "Bob -> 1 BTC -> Alice";
-        let signature = ecdsa
-            .sign(message, &sk)
-            .expect("Could not sign");
+        let signature = ecdsa.sign(message, &sk).expect("Could not sign");
 
         let another_message = "Bob -> 2 BTC -> Alice";
         let verify_result = ecdsa
@@ -346,17 +352,15 @@ mod test {
         )
         .expect("could not convert gy");
 
-        let a =  BigUint::from(0u32);
+        let a = BigUint::from(0u32);
         let b = BigUint::from(7u32);
         let g = Point::Coor(gx, gy);
-        let ecdsa = ECDSA ::new(a, b, p, g, q);
+        let ecdsa = ECDSA::new(a, b, p, g, q);
 
         let (sk, pk) = ecdsa.generate_key_pair().unwrap();
 
         let message = "Bob -> 1 BTC -> Alice";
-        let signature = ecdsa
-            .sign(message, &sk)
-            .expect("Could not sign");
+        let signature = ecdsa.sign(message, &sk).expect("Could not sign");
 
         let verify_result = ecdsa
             .verify(message, &pk, &signature)
