@@ -1,9 +1,8 @@
+use super::finite_field::FiniteRing;
 use std::ops::{Add, AddAssign, Mul, Neg, Sub};
 
-use super::finite_field::FiniteRing;
-
 /// Polynomial in the ring T[X]/(X^N + 1)
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Polynomial<T, const N: usize>
 where
     T: Clone + PartialEq + Eq,
@@ -13,10 +12,7 @@ where
     pub degree: Option<usize>,
 }
 
-impl<T, const N: usize> Add for Polynomial<T, N>
-where
-    T: FiniteRing + Clone + Copy + Mul<Output = T> + Add<Output = T> + Neg<Output = T>,
-{
+impl<T: FiniteRing, const N: usize> Add for Polynomial<T, N> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -51,10 +47,7 @@ where
     }
 }
 
-impl<T, const N: usize> Neg for Polynomial<T, N>
-where
-    T: FiniteRing + Clone + Copy + Mul<Output = T> + Add<Output = T> + Neg<Output = T>,
-{
+impl<T: FiniteRing, const N: usize> Neg for Polynomial<T, N> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
@@ -74,10 +67,7 @@ where
     }
 }
 
-impl<T, const N: usize> Sub for Polynomial<T, N>
-where
-    T: FiniteRing + Clone + Copy + Mul<Output = T> + Add<Output = T> + Neg<Output = T>,
-{
+impl<T: FiniteRing, const N: usize> Sub for Polynomial<T, N> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
@@ -85,19 +75,13 @@ where
     }
 }
 
-impl<T, const N: usize> AddAssign for Polynomial<T, N>
-where
-    T: FiniteRing + Clone + Copy + Mul<Output = T> + Add<Output = T> + Neg<Output = T>,
-{
+impl<T: FiniteRing, const N: usize> AddAssign for Polynomial<T, N> {
     fn add_assign(&mut self, rhs: Self) {
         *self = self.clone() + rhs;
     }
 }
 
-impl<T, const N: usize> Mul for Polynomial<T, N>
-where
-    T: FiniteRing + Clone + Copy + Mul<Output = T> + Add<Output = T> + Neg<Output = T>,
-{
+impl<T: FiniteRing, const N: usize> Mul for Polynomial<T, N> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -135,14 +119,10 @@ where
     }
 }
 
-impl<T, const N: usize> FiniteRing for Polynomial<T, N>
-where
-    T: FiniteRing + Clone + Copy,
-{
-    const ZERO: Self = 
-        Self {
-            coefficients: [T::ZERO; N],
-            degree: None,
+impl<T: FiniteRing, const N: usize> FiniteRing for Polynomial<T, N> {
+    const ZERO: Self = Self {
+        coefficients: [T::ZERO; N],
+        degree: None,
     };
 
     const ONE: Self = {
@@ -155,20 +135,13 @@ where
     };
 }
 
-impl<T, const N: usize> Polynomial<T, N>
-where
-    T: FiniteRing + Clone + Copy + Mul<Output = T>,
-{
+impl<T: FiniteRing, const N: usize> Polynomial<T, N> {
     pub fn is_zero(&self) -> bool {
         self.degree.is_none()
     }
 
     pub fn ring_dimension() -> usize {
         N
-    }
-
-    pub fn degree(&self) -> Option<usize> {
-        self.degree
     }
 
     pub fn with_coefficients(coefficients: [T; N]) -> Self {
@@ -238,10 +211,7 @@ where
     }
 }
 
-impl<T, const N: usize> Default for Polynomial<T, N>
-where
-    T: FiniteRing + Clone + Copy,
-{
+impl<T: FiniteRing, const N: usize> Default for Polynomial<T, N> {
     fn default() -> Self {
         Self {
             coefficients: [T::ZERO; N],
@@ -252,25 +222,25 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::math::{Poly3329, F3329};
     use super::*;
+    use crate::math::{Poly3329, F3329};
 
     #[test]
     fn test_scalar_mult() {
         let mut poly = Poly3329::<3>::with_coefficients([6.into(), 3324.into(), 3.into()]);
         poly.set_coefficient(2, F3329::ZERO);
-        assert_eq!(poly.degree().unwrap(), 1);
+        assert_eq!(poly.degree.unwrap(), 1);
 
         poly.set_coefficient(2, F3329::from(5));
-        assert_eq!(poly.degree().unwrap(), 2);
+        assert_eq!(poly.degree.unwrap(), 2);
 
         poly.set_coefficient(1, F3329::ZERO);
-        assert_eq!(poly.degree().unwrap(), 2);
+        assert_eq!(poly.degree.unwrap(), 2);
 
         poly.set_coefficient(2, F3329::ZERO);
-        assert_eq!(poly.degree().unwrap(), 0);
+        assert_eq!(poly.degree.unwrap(), 0);
 
         poly.set_coefficient(0, F3329::ZERO);
-        assert!(poly.degree().is_none());
+        assert!(poly.degree.is_none());
     }
 }

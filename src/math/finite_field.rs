@@ -9,6 +9,8 @@ pub trait FiniteRing:
     + Sub<Output = Self>
     + Mul<Output = Self>
     + AddAssign
+    + Copy
+    + Clone
 {
     const ZERO: Self;
     const ONE: Self;
@@ -127,7 +129,7 @@ impl<const P: u64> FiniteField for Fp<P> {
         }
         for i in 1..P {
             if is_primitive_root(i, P) {
-                return Self {val: i};
+                return Self { val: i };
             }
         }
         unreachable!("P is not a prime number")
@@ -160,6 +162,25 @@ impl<const P: u64> From<u64> for Fp<P> {
     }
 }
 
+impl<const P: u64> Fp<P> {
+    /// p mod n == 1
+    /// get n-th primitive root of unity
+    pub fn get_primitive_root_of_unity(n: usize) -> Self {
+        if (P - 1) % (n as u64) != 0 {
+            panic!("p mod n == 1 not satisfied");
+        }
+
+        if P == 3329 && n == 256 {
+            return Self::from(17);
+        }
+
+        let g = BigUint::from(Self::get_generator().val);
+        let power = BigUint::from((P - 1) / n as u64);
+        let val = g.modpow(&power, &P.into()).try_into().unwrap();
+        Self { val }
+    }
+}
+
 fn prime_factors(mut n: u64) -> Vec<u64> {
     let mut res = vec![];
     let mut i = 2;
@@ -180,12 +201,18 @@ fn prime_factors(mut n: u64) -> Vec<u64> {
 }
 
 fn is_primitive_root(val: u64, p: u64) -> bool {
-    let t: u64 = BigUint::from(val).modpow(&BigUint::from(p - 1), &BigUint::from(p)).try_into().unwrap();
+    let t: u64 = BigUint::from(val)
+        .modpow(&BigUint::from(p - 1), &BigUint::from(p))
+        .try_into()
+        .unwrap();
     if t != 1 {
         return false;
     }
     for i in prime_factors(p - 1) {
-        let t: u64 = BigUint::from(val).modpow(&BigUint::from((p - 1) / i), &BigUint::from(p)).try_into().unwrap();
+        let t: u64 = BigUint::from(val)
+            .modpow(&BigUint::from((p - 1) / i), &BigUint::from(p))
+            .try_into()
+            .unwrap();
         if t == 1 {
             return false;
         }

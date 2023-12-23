@@ -1,8 +1,8 @@
+use crate::hash::sha256::Sha256;
 use crate::math::{
     elliptic_curve::{EllipticCurve, Point},
     finite_field::FpBigUint,
 };
-use crate::sha256::Sha256;
 use num_bigint::{BigUint, RandBigInt};
 use std::ops::Rem;
 

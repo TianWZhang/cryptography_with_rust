@@ -1,4 +1,4 @@
-use cryptography_with_rust::sha256::Sha256;
+use cryptography_with_rust::hash::Sha256;
 use std::collections::HashMap;
 
 const BYTES: usize = 2;

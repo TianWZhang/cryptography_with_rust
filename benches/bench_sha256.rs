@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use cryptography_with_rust::sha256;
+use cryptography_with_rust::hash::sha256;
 use ring::digest::SHA256;
 
 const TEXT: &[u8] = b"some text to test hash algorithms";

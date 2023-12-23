@@ -103,6 +103,12 @@ impl<T, const D: usize> IndexMut<usize> for Vector<T, D> {
     }
 }
 
+impl<T, const D: usize> From<[T; D]> for Vector<T, D> {
+    fn from(value: [T; D]) -> Self {
+        Vector { entries: value }
+    }
+}
+
 impl<T, const M: usize, const N: usize> Matrix<T, M, N>
 where
     T: FiniteRing + Clone + Default + Copy,

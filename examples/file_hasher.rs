@@ -1,4 +1,4 @@
-use cryptography_with_rust::sha256::{self, Sha256};
+use cryptography_with_rust::hash::sha256::{self, Sha256};
 use std::{
     env,
     fs::File,
