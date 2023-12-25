@@ -162,6 +162,12 @@ impl<const P: u64> From<u64> for Fp<P> {
     }
 }
 
+impl<const P: u64> Into<u64> for Fp<P> {
+    fn into(self) -> u64 {
+        self.val
+    }
+}
+
 impl<const P: u64> Fp<P> {
     /// p mod n == 1
     /// get n-th primitive root of unity
@@ -178,6 +184,10 @@ impl<const P: u64> Fp<P> {
         let power = BigUint::from((P - 1) / n as u64);
         let val = g.modpow(&power, &P.into()).try_into().unwrap();
         Self { val }
+    }
+
+    pub fn to_le_bytes(&self) -> [u8; 8] {
+        self.val.to_le_bytes()
     }
 }
 

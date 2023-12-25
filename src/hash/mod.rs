@@ -1,4 +1,5 @@
 pub mod sha256;
-pub mod sha3_wrapper;
+mod sha3_wrapper;
 
 pub use sha256::Sha256;
+pub use sha3_wrapper::*;
