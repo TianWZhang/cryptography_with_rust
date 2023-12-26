@@ -148,3 +148,19 @@ where
         Vector { entries }
     }
 }
+
+impl<T, const M: usize, const N: usize> Index<(usize, usize)> for Matrix<T, M, N> {
+    type Output = T;
+
+    fn index(&self, index: (usize, usize)) -> &Self::Output {
+        let (i, j) = index;
+        &self.entries[i][j]
+    }
+}
+
+impl<T, const M: usize, const N: usize> IndexMut<(usize, usize)> for Matrix<T, M, N> {
+    fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
+        let (i, j) = index;
+        &mut self.entries[i][j]
+    }
+}

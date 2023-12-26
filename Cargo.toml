@@ -28,4 +28,10 @@ ring = "0.17.7"
 
 [[bench]]
 name = "bench_sha256"
+path = "benches/bench_sha256.rs"
+harness = false
+
+[[bench]]
+name = "bench_kyber"
+path = "benches/bench_kyber.rs"
 harness = false

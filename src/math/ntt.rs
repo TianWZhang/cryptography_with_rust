@@ -264,15 +264,27 @@ fn vec_inner_prod<const D: usize>(
 }
 
 /// Computes a^T*b as NTT^-1(a_hat^T o b_hat)
-pub fn ntt_inner_prod<const D: usize>(
+pub fn inv_ntt_inner_prod<const D: usize>(
     a_hat: &PolyVec3329<256, D>,
     b_hat: &PolyVec3329<256, D>,
 ) -> Poly3329<256> {
     inv_ntt_kyber(&vec_inner_prod(a_hat, b_hat))
 }
 
-/// Computes a * b as NTT^-1(a_hat o b_hat)
-pub fn ntt_product_matvec<const X: usize, const Y: usize>(
+/// Computes A_hat * b_hat
+pub fn product_matvec<const X: usize, const Y: usize>(
+    a_hat: &PolyMatrix3329<256, X, Y>,
+    b_hat: &PolyVec3329<256, Y>,
+) -> PolyVec3329<256, X> {
+    let mut res = PolyVec3329::zero();
+    for i in 0..X {
+        res[i] = vec_inner_prod(&a_hat.row(i), b_hat);
+    }
+    res
+}
+
+/// Computes A * b as NTT^-1(A_hat * b_hat)
+pub fn inv_ntt_product_matvec<const X: usize, const Y: usize>(
     a_hat: &PolyMatrix3329<256, X, Y>,
     b_hat: &PolyVec3329<256, Y>,
 ) -> PolyVec3329<256, X> {

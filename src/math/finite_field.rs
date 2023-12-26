@@ -185,10 +185,6 @@ impl<const P: u64> Fp<P> {
         let val = g.modpow(&power, &P.into()).try_into().unwrap();
         Self { val }
     }
-
-    pub fn to_le_bytes(&self) -> [u8; 8] {
-        self.val.to_le_bytes()
-    }
 }
 
 fn prime_factors(mut n: u64) -> Vec<u64> {

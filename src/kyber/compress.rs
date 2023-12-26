@@ -1,16 +1,16 @@
 use crate::math::{finite_field::FiniteRing, Poly3329, PolyVec3329, F3329};
 
-fn compress_int(x: u64, d: u64, q: u64) -> u64 {
+fn compress_int(x: u64, d: usize, q: usize) -> u64 {
     let m = 1 << d;
     ((((m as f64) / (q as f64)) * (x as f64)).round() as u64) % m
 }
 
-fn decompress_int(x: u64, d: u64, q: u64) -> u64 {
+fn decompress_int(x: u64, d: usize, q: usize) -> u64 {
     let m = 1 << d;
     (((q as f64) / (m as f64)) * (x as f64)).round() as u64
 }
 
-pub(crate) fn compress_poly<const N: usize>(x: Poly3329<N>, d: u64, q: u64) -> Poly3329<N> {
+pub(crate) fn compress_poly<const N: usize>(x: Poly3329<N>, d: usize, q: usize) -> Poly3329<N> {
     let mut coeffs = [F3329::ZERO; N];
     for i in 0..N {
         coeffs[i] = F3329::from(compress_int(x.coefficients[i].into(), d, q));
@@ -18,7 +18,7 @@ pub(crate) fn compress_poly<const N: usize>(x: Poly3329<N>, d: u64, q: u64) -> P
     Poly3329::with_coefficients(coeffs)
 }
 
-pub(crate) fn decompress_poly<const N: usize>(x: Poly3329<N>, d: u64, q: u64) -> Poly3329<N> {
+pub(crate) fn decompress_poly<const N: usize>(x: Poly3329<N>, d: usize, q: usize) -> Poly3329<N> {
     let mut coeffs = [F3329::ZERO; N];
     for i in 0..N {
         coeffs[i] = F3329::from(decompress_int(x.coefficients[i].into(), d, q));
@@ -28,8 +28,8 @@ pub(crate) fn decompress_poly<const N: usize>(x: Poly3329<N>, d: u64, q: u64) ->
 
 pub(crate) fn compress_polyvec<const N: usize, const D: usize>(
     x: PolyVec3329<N, D>,
-    d: u64,
-    q: u64,
+    d: usize,
+    q: usize,
 ) -> PolyVec3329<N, D> {
     let mut res = [Poly3329::ZERO; D];
     for i in 0..D {
@@ -40,8 +40,8 @@ pub(crate) fn compress_polyvec<const N: usize, const D: usize>(
 
 pub(crate) fn decompress_polyvec<const N: usize, const D: usize>(
     x: PolyVec3329<N, D>,
-    d: u64,
-    q: u64,
+    d: usize,
+    q: usize,
 ) -> PolyVec3329<N, D> {
     let mut res = [Poly3329::ZERO; D];
     for i in 0..D {
