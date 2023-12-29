@@ -1,5 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use cryptography_with_rust::kyber::{KYBER512PKE, KYBER768PKE, KYBER1024PKE, KYBER512KEM, KYBER768KEM, KYBER1024KEM};
+use cryptography_with_rust::kyber::{
+    KYBER1024KEM, KYBER1024PKE, KYBER512KEM, KYBER512PKE, KYBER768KEM, KYBER768PKE,
+};
 use rand::RngCore;
 
 fn random_bytes(len: usize) -> Vec<u8> {
@@ -20,12 +22,10 @@ pub fn bench_kyber512_pke(c: &mut Criterion) {
     let ciphertext = pke.encrypt(&pk, &msg, &random_coins);
     let _msg_dec = pke.decrypt(&sk, &ciphertext);
 
-    group.bench_function("KeyGen", |b| 
-        b.iter(|| {
-            pke.key_gen()
-        })
-    );
-    group.bench_function("Encrypt", |b| b.iter(|| pke.encrypt(&pk, &msg, &random_coins)));
+    group.bench_function("KeyGen", |b| b.iter(|| pke.key_gen()));
+    group.bench_function("Encrypt", |b| {
+        b.iter(|| pke.encrypt(&pk, &msg, &random_coins))
+    });
     group.bench_function("Decrypt", |b| b.iter(|| pke.decrypt(&sk, &ciphertext)));
     group.finish();
 }
@@ -40,12 +40,10 @@ pub fn bench_kyber768_pke(c: &mut Criterion) {
     let ciphertext = pke.encrypt(&pk, &msg, &random_coins);
     let _msg_dec = pke.decrypt(&sk, &ciphertext);
 
-    group.bench_function("KeyGen", |b| 
-        b.iter(|| {
-            pke.key_gen()
-        })
-    );
-    group.bench_function("Encrypt", |b| b.iter(|| pke.encrypt(&pk, &msg, &random_coins)));
+    group.bench_function("KeyGen", |b| b.iter(|| pke.key_gen()));
+    group.bench_function("Encrypt", |b| {
+        b.iter(|| pke.encrypt(&pk, &msg, &random_coins))
+    });
     group.bench_function("Decrypt", |b| b.iter(|| pke.decrypt(&sk, &ciphertext)));
     group.finish();
 }
@@ -60,12 +58,10 @@ pub fn bench_kyber1024_pke(c: &mut Criterion) {
     let ciphertext = pke.encrypt(&pk, &msg, &random_coins);
     let _msg_dec = pke.decrypt(&sk, &ciphertext);
 
-    group.bench_function("KeyGen", |b| 
-        b.iter(|| {
-            pke.key_gen()
-        })
-    );
-    group.bench_function("Encrypt", |b| b.iter(|| pke.encrypt(&pk, &msg, &random_coins)));
+    group.bench_function("KeyGen", |b| b.iter(|| pke.key_gen()));
+    group.bench_function("Encrypt", |b| {
+        b.iter(|| pke.encrypt(&pk, &msg, &random_coins))
+    });
     group.bench_function("Decrypt", |b| b.iter(|| pke.decrypt(&sk, &ciphertext)));
     group.finish();
 }
@@ -76,15 +72,13 @@ pub fn bench_kyber512_kem(c: &mut Criterion) {
     let mut group = c.benchmark_group("KYBER 512 KEM");
     let (sk, pk) = kem.key_gen();
     let (ciphertext, _shared_key) = kem.encapsulate(&pk);
-    let _shared_key = kem.decapsulate( &ciphertext, &sk);
+    let _shared_key = kem.decapsulate(&ciphertext, &sk);
 
-    group.bench_function("KeyGen", |b| 
-        b.iter(|| {
-            kem.key_gen()
-        })
-    );
+    group.bench_function("KeyGen", |b| b.iter(|| kem.key_gen()));
     group.bench_function("Encapsulate", |b| b.iter(|| kem.encapsulate(&pk)));
-    group.bench_function("Decapsulate", |b| b.iter(|| kem.decapsulate( &ciphertext, &sk)));
+    group.bench_function("Decapsulate", |b| {
+        b.iter(|| kem.decapsulate(&ciphertext, &sk))
+    });
     group.finish();
 }
 
@@ -93,15 +87,13 @@ pub fn bench_kyber768_kem(c: &mut Criterion) {
     let mut group = c.benchmark_group("KYBER 768 KEM");
     let (sk, pk) = kem.key_gen();
     let (ciphertext, _shared_key) = kem.encapsulate(&pk);
-    let _shared_key = kem.decapsulate( &ciphertext, &sk);
+    let _shared_key = kem.decapsulate(&ciphertext, &sk);
 
-    group.bench_function("KeyGen", |b| 
-        b.iter(|| {
-            kem.key_gen()
-        })
-    );
+    group.bench_function("KeyGen", |b| b.iter(|| kem.key_gen()));
     group.bench_function("Encapsulate", |b| b.iter(|| kem.encapsulate(&pk)));
-    group.bench_function("Decapsulate", |b| b.iter(|| kem.decapsulate( &ciphertext, &sk)));
+    group.bench_function("Decapsulate", |b| {
+        b.iter(|| kem.decapsulate(&ciphertext, &sk))
+    });
     group.finish();
 }
 
@@ -112,16 +104,13 @@ pub fn bench_kyber1024_kem(c: &mut Criterion) {
     let (ciphertext, _shared_key) = kem.encapsulate(&pk);
     let _shared_key = kem.decapsulate(&ciphertext, &sk);
 
-    group.bench_function("KeyGen", |b| 
-        b.iter(|| {
-            kem.key_gen()
-        })
-    );
+    group.bench_function("KeyGen", |b| b.iter(|| kem.key_gen()));
     group.bench_function("Encapsulate", |b| b.iter(|| kem.encapsulate(&pk)));
-    group.bench_function("Decapsulate", |b| b.iter(|| kem.decapsulate( &ciphertext, &sk)));
+    group.bench_function("Decapsulate", |b| {
+        b.iter(|| kem.decapsulate(&ciphertext, &sk))
+    });
     group.finish();
 }
-
 
 criterion_group! {
     name = kyber512;

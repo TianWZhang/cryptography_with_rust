@@ -54,20 +54,14 @@ impl<const K: usize> KEM<K> {
         }
     }
 
-    pub const fn new(
-        pke: PKE<K>,
-        sk_size: usize,
-    ) -> Self {
-        Self {
-            pke,
-            sk_size,
-        }
+    pub const fn new(pke: PKE<K>, sk_size: usize) -> Self {
+        Self { pke, sk_size }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::kyber::{KYBER512KEM, KYBER768KEM, KYBER1024KEM};
+    use crate::kyber::{KYBER1024KEM, KYBER512KEM, KYBER768KEM};
 
     #[test]
     fn encapsulate_then_decapsulate_ccakem_512() {

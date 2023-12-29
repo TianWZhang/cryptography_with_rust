@@ -108,7 +108,7 @@ impl<const K: usize> PKE<K> {
 
 #[cfg(test)]
 mod tests {
-    use crate::kyber::{KYBER512PKE, KYBER768PKE, KYBER1024PKE};
+    use crate::kyber::{KYBER1024PKE, KYBER512PKE, KYBER768PKE};
 
     use super::*;
 

@@ -1,5 +1,5 @@
 use super::{
-    finite_field::{FiniteField, FiniteRing},
+    finite_field::{FiniteField, FiniteRing, NTT},
     Poly3329, PolyMatrix3329, PolyVec3329, F3329,
 };
 
@@ -36,11 +36,13 @@ fn bitrev<T: Copy>(x: &mut [T]) {
     }
 }
 
+
+
 /// Computes the forward number-theoretic transform of the given vector x in place,
 /// with respect to the given primitive nth root of unity under the given modulus.
 /// The length of the x must be a power of 2.
 /// This is used for polynomials over Z_q[X]/(X^n - 1)
-pub fn ntt_radix2<T: FiniteField>(x: &mut [T], pow_table: &[T]) {
+pub fn ntt_radix2<T: NTT>(x: &mut [T], pow_table: &[T]) {
     let n = x.len();
     if !is_power_of_two(n) {
         panic!("Length is not a power of 2");
@@ -68,7 +70,7 @@ pub fn ntt_radix2<T: FiniteField>(x: &mut [T], pow_table: &[T]) {
 // Returns the inverse number-theoretic transform of the given vector x.
 pub fn inv_ntt_radix2<T>(x: &mut [T], inv_pow_table: &[T])
 where
-    T: FiniteField + From<u64>,
+    T: NTT + From<u64>,
 {
     let n = x.len();
     ntt_radix2(x, inv_pow_table);

@@ -4,11 +4,13 @@ use self::{
     poly::Polynomial,
 };
 
+mod constants;
 pub mod elliptic_curve;
 pub mod finite_field;
 pub mod matrix;
 pub mod ntt;
 pub mod poly;
+pub mod prime;
 
 /// Polynomial Ring Rq = Zq[X]/(X^N+1), q = 3329
 pub type F3329 = Fp<3329>;
