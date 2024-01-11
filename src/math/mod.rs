@@ -6,6 +6,7 @@ use self::{
 
 mod constants;
 pub mod elliptic_curve;
+pub mod fft;
 pub mod finite_field;
 pub mod matrix;
 pub mod ntt;

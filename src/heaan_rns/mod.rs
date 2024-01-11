@@ -1,3 +1,5 @@
 pub mod context;
+pub mod key;
 pub mod plaintext;
-mod math_utils;
+pub mod scheme;
+mod utils;

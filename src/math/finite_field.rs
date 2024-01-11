@@ -1,7 +1,7 @@
 use num_bigint::BigUint;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub};
 
-use super::{constants::INV_3329, prime::{prime_factors, modpow}};
+use super::constants::INV_3329;
 
 pub trait FiniteRing:
     Sized
@@ -18,26 +18,8 @@ pub trait FiniteRing:
     const ONE: Self;
 }
 
-pub trait NTT:
-    Sized
-    + Eq
-    + Add<Output = Self>
-    + Neg<Output = Self>
-    + Sub<Output = Self>
-    + Mul<Output = Self>
-    + AddAssign
-    + Div
-    + Copy
-    + Clone {
-        fn inv(&self) -> Result<Self, String>;
-}
-
-pub trait FiniteField: FiniteRing + NTT {
-    /// The multiplicative group of the finite field Fp^{*} is cyclic.
-    /// Return the generator of Fp^{*}.
-    fn get_generator() -> Self;
-    // fn inv(&self) -> Result<Self, String>;
-    fn order() -> usize;
+pub trait FiniteField: FiniteRing + Div {
+    fn inv(&self) -> Result<Self, String>;
 }
 
 pub struct FpBigUint {
@@ -74,7 +56,6 @@ impl FpBigUint {
     }
 }
 
-
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub struct Fp<const P: u64> {
     val: u64,
@@ -85,7 +66,7 @@ impl<const P: u64> Add for Fp<P> {
 
     fn add(self, rhs: Self) -> Self::Output {
         Self {
-            val: (self.val + rhs.val) % P,
+            val: add_mod(self.val, rhs.val, P),
         }
     }
 }
@@ -95,7 +76,7 @@ impl<const P: u64> Mul for Fp<P> {
 
     fn mul(self, rhs: Self) -> Self::Output {
         Self {
-            val: (self.val * rhs.val) % P,
+            val: mul_mod(self.val, rhs.val, P),
         }
     }
 }
@@ -108,7 +89,9 @@ impl<const P: u64> Neg for Fp<P> {
             return Self::ZERO;
         }
 
-        Self { val: P - self.val }
+        Self {
+            val: neg_mod(self.val, P),
+        }
     }
 }
 
@@ -140,20 +123,20 @@ impl<const P: u64> FiniteRing for Fp<P> {
 }
 
 impl<const P: u64> FiniteField for Fp<P> {
-    fn get_generator() -> Self {
-        if P == 3329 {
-            return Self::from(3);
+    fn inv(&self) -> Result<Self, String> {
+        if self == &Self::ZERO {
+            return Err("Zero has no inverse".to_string());
         }
-        for i in 1..P {
-            if is_primitive_root(i, P) {
-                return Self { val: i };
-            }
-        }
-        unreachable!("P is not a prime number")
-    }
 
-    fn order() -> usize {
-        P as usize
+        if P == 3329 {
+            Ok(INV_3329[self.val as usize].into())
+        } else {
+            let val = BigUint::from(self.val)
+                .modpow(&BigUint::from(P - 2), &BigUint::from(P))
+                .try_into()
+                .unwrap();
+            Ok(Self { val })
+        }
     }
 }
 
@@ -169,56 +152,51 @@ impl<const P: u64> Into<u64> for Fp<P> {
     }
 }
 
-impl<const P: u64> Fp<P> {
-    /// p mod n == 1
-    /// get n-th primitive root of unity
-    pub fn get_primitive_root_of_unity(n: usize) -> Self {
-        if P % (n as u64) != 1 {
-            panic!("p mod n == 1 not satisfied");
-        }
+#[inline]
+pub(crate) fn add_mod(a1: u64, a2: u64, p: u64) -> u64 {
+    ((a1 as u128 + a2 as u128) % p as u128) as u64
+}
 
-        if P == 3329 && n == 256 {
-            return Self::from(17);
-        }
+#[inline]
+pub(crate) fn mul_mod(a1: u64, a2: u64, p: u64) -> u64 {
+    ((a1 as u128 * a2 as u128) % p as u128) as u64
+}
 
-        let g = Self::get_generator().val;
-        let power = (P - 1) / n as u64;
-        let val = modpow(g, power, P);
-        Self { val }
+#[inline]
+pub(crate) fn neg_mod(mut a: u64, p: u64) -> u64 {
+    a = a % p;
+    if a == 0 {
+        0
+    } else {
+        p - a
     }
 }
 
-impl<const P: u64> NTT for Fp<P> {
-    fn inv(&self) -> Result<Self, String> {
-        if self == &Self::ZERO {
-            return Err("Zero has no inverse".to_string());
-        }
-
-        if P == 3329 {
-            Ok(INV_3329[self.val as usize].into())
-        } else {
-            let val = modpow(self.val, P - 2, P);
-            Ok(Self { val })
-        }
-    }
+#[inline]
+pub(crate) fn sub_mod(a1: u64, a2: u64, p: u64) -> u64 {
+    let a2_neg = neg_mod(a2, p);
+    add_mod(a1, a2_neg, p)
 }
 
-fn is_primitive_root(val: u64, p: u64) -> bool {
-    if modpow(val, p - 1, p) != 1 {
-        return false;
+#[inline]
+pub(crate) fn inv_mod(mut a: u64, p: u64) -> u64 {
+    a = a % p;
+    if a == 0 {
+        panic!("Zero has no inverse");
     }
-    for i in prime_factors(p - 1) {
-        if modpow(val, (p - 1) / i, p) == 1 {
-            return false;
-        }
-    }
-    true
+    BigUint::from(a)
+        .modpow(&BigUint::from(p - 2), &BigUint::from(p))
+        .try_into()
+        .unwrap()
+}
+
+pub(crate) fn div_mod(a1: u64, a2: u64, p: u64) -> u64 {
+    let a2_inv = inv_mod(a2, p);
+    mul_mod(a1, a2_inv, p)
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::math::F3329;
-
     use super::*;
 
     #[test]
@@ -284,15 +262,5 @@ mod tests {
 
         let res = f11.mult(&a, &a_inv);
         assert_eq!(res, BigUint::from(1u32));
-    }
-
-    #[test]
-    fn test_generator() {
-        assert_eq!(Fp::<17>::get_generator(), Fp::<17>::from(3));
-        assert_eq!(Fp::<113>::get_generator(), Fp::<113>::from(3));
-        assert_eq!(Fp::<22273>::get_generator(), Fp::<22273>::from(5));
-        assert_eq!(Fp::<31489>::get_generator(), Fp::<31489>::from(7));
-        assert_eq!(Fp::<26881>::get_generator(), Fp::<26881>::from(11));
-        assert_eq!(F3329::get_generator(), F3329::from(3));
     }
 }

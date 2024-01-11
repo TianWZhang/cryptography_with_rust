@@ -1,5 +1,5 @@
 use super::{
-    finite_field::{FiniteField, FiniteRing, NTT},
+    finite_field::{add_mod, div_mod, mul_mod, sub_mod, FiniteField, FiniteRing},
     Poly3329, PolyMatrix3329, PolyVec3329, F3329,
 };
 
@@ -9,7 +9,7 @@ fn is_power_of_two(n: usize) -> bool {
 
 /// bit reversal
 /// the length of x should be a power of two
-fn bitrev<T: Copy>(x: &mut [T]) {
+pub(crate) fn bitrev<T: Copy>(x: &mut [T]) {
     let n = x.len();
     if !is_power_of_two(n) {
         panic!("The length n of x must be a power of two");
@@ -36,13 +36,11 @@ fn bitrev<T: Copy>(x: &mut [T]) {
     }
 }
 
-
-
 /// Computes the forward number-theoretic transform of the given vector x in place,
 /// with respect to the given primitive nth root of unity under the given modulus.
 /// The length of the x must be a power of 2.
 /// This is used for polynomials over Z_q[X]/(X^n - 1)
-pub fn ntt_radix2<T: NTT>(x: &mut [T], pow_table: &[T]) {
+pub fn ntt_radix2<T: FiniteField>(x: &mut [T], pow_table: &[T]) {
     let n = x.len();
     if !is_power_of_two(n) {
         panic!("Length is not a power of 2");
@@ -70,13 +68,43 @@ pub fn ntt_radix2<T: NTT>(x: &mut [T], pow_table: &[T]) {
 // Returns the inverse number-theoretic transform of the given vector x.
 pub fn inv_ntt_radix2<T>(x: &mut [T], inv_pow_table: &[T])
 where
-    T: NTT + From<u64>,
+    T: FiniteField + From<u64>,
 {
     let n = x.len();
     ntt_radix2(x, inv_pow_table);
     let n_inv = T::from(n as u64).inv().unwrap();
     for i in 0..n {
         x[i] = x[i] * n_inv;
+    }
+}
+
+// To ensure correctness, the maximal value of x should be less than p.
+pub fn ntt_radix2_u64(x: &mut [u64], pow_table: &[u64], p: u64) {
+    let n = x.len();
+    if !is_power_of_two(n) {
+        panic!("Length is not a power of 2");
+    }
+
+    bitrev(x);
+
+    let mut len = 2;
+    while len <= n {
+        for r in 0..n / len {
+            for j in 0..len / 2 {
+                let tau = mul_mod(pow_table[n / len * j], x[r * len + j + len / 2], p);
+                x[r * len + j + len / 2] = sub_mod(x[r * len + j], tau, p);
+                x[r * len + j] = add_mod(x[r * len + j], tau, p);
+            }
+        }
+        len *= 2;
+    }
+}
+
+pub fn inv_ntt_radix2_u64(x: &mut [u64], inv_pow_table: &[u64], p: u64) {
+    let n = x.len();
+    ntt_radix2_u64(x, inv_pow_table, p);
+    for i in 0..n {
+        x[i] = div_mod(x[i], n as u64, p);
     }
 }
 
@@ -317,7 +345,7 @@ fn inv_ntt_vec<const D: usize>(p_hat: &PolyVec3329<256, D>) -> PolyVec3329<256, 
 
 #[cfg(test)]
 mod tests {
-    use crate::math::finite_field::Fp;
+    use crate::math::{finite_field::Fp, prime::get_primitive_root_of_unity};
 
     use super::*;
 
@@ -348,9 +376,16 @@ mod tests {
             .collect();
         let original_x = x.clone();
         let mut n = x.len();
-        let pow_table = generate_power_table(&Fp::<17>::get_primitive_root_of_unity(n), n);
-        let inv_pow_table =
-            generate_power_table(&Fp::<17>::get_primitive_root_of_unity(n).inv().unwrap(), n);
+        let pow_table = generate_power_table(
+            &Fp::<17>::from(get_primitive_root_of_unity(n as u64, 17)),
+            n,
+        );
+        let inv_pow_table = generate_power_table(
+            &Fp::<17>::from(get_primitive_root_of_unity(n as u64, 17))
+                .inv()
+                .unwrap(),
+            n,
+        );
         ntt_radix2(&mut x, &pow_table);
         let expected_x: Vec<_> = [10, 16, 3, 8, 6, 2, 13, 7]
             .iter()
@@ -366,9 +401,16 @@ mod tests {
             .collect();
         let original_x = x.clone();
         n = x.len();
-        let pow_table = generate_power_table(&Fp::<113>::get_primitive_root_of_unity(n), n);
-        let inv_pow_table =
-            generate_power_table(&Fp::<113>::get_primitive_root_of_unity(n).inv().unwrap(), n);
+        let pow_table = generate_power_table(
+            &Fp::<113>::from(get_primitive_root_of_unity(n as u64, 113)),
+            n,
+        );
+        let inv_pow_table = generate_power_table(
+            &Fp::<113>::from(get_primitive_root_of_unity(n as u64, 113))
+                .inv()
+                .unwrap(),
+            n,
+        );
         ntt_radix2(&mut x, &pow_table);
         let expected_x: Vec<_> = [
             94, 75, 17, 29, 21, 78, 105, 105, 94, 99, 94, 39, 21, 5, 108, 48,
