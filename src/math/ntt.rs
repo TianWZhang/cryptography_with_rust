@@ -345,7 +345,10 @@ fn inv_ntt_vec<const D: usize>(p_hat: &PolyVec3329<256, D>) -> PolyVec3329<256, 
 
 #[cfg(test)]
 mod tests {
-    use crate::math::{finite_field::Fp, prime::get_primitive_root_of_unity};
+    use crate::math::{
+        finite_field::{inv_mod, Fp},
+        prime::get_primitive_root_of_unity,
+    };
 
     use super::*;
 
@@ -450,5 +453,41 @@ mod tests {
         let b_hat = ntt_kyber(&b);
 
         assert_eq!(a * b, inv_ntt_kyber(&base_mul(&a_hat, &b_hat)));
+    }
+
+    #[test]
+    fn test_ntt_radix2_u64() {
+        let n = 1 << 15;
+        let p = 2305843009214414849;
+        let mut x = vec![0; n];
+        x[1] = 1;
+        let mut x_square_expected = vec![0; n];
+        x_square_expected[2] = 1;
+
+        let root = get_primitive_root_of_unity(n as u64, p);
+        let mut pow_table = vec![0; n / 2];
+
+        let mut temp = 1;
+        for i in 0..n / 2 {
+            pow_table[i] = temp;
+            temp = mul_mod(temp, root, p);
+        }
+
+        let mut inv_pow_table = vec![0; n / 2];
+        let inv_root = inv_mod(root, p);
+
+        let mut temp = 1;
+        for i in 0..n / 2 {
+            inv_pow_table[i] = temp;
+            temp = mul_mod(temp, inv_root, p);
+        }
+
+        ntt_radix2_u64(&mut x, &pow_table, p);
+        let mut x_square = vec![0; n];
+        for j in 0..n {
+            x_square[j] = mul_mod(x[j], x[j], p);
+        }
+        inv_ntt_radix2_u64(&mut x_square, &inv_pow_table, p);
+        assert_eq!(x_square, x_square_expected);
     }
 }

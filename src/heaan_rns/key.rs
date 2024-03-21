@@ -1,8 +1,15 @@
 use super::context::Context;
 
+#[derive(Hash, PartialEq, Eq)]
+pub enum KeyType {
+    Encryption,
+    Multiplication,
+    Conjugation,
+}
+
 #[derive(Debug, Clone)]
 pub struct Sk {
-    sx: Vec<u64>,
+    pub(crate) sx: Vec<u64>,
 }
 
 impl Sk {

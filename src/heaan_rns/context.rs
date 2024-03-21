@@ -12,12 +12,12 @@ use crate::math::{
 const Q0_BIT_SIZE: u32 = 61;
 
 pub struct Context {
-    n: u64, // ring dimension
+    pub(crate) n: u64, // ring dimension
     pub(crate) max_level: usize,
     pub(crate) num_special_modulus: usize, // usually max_level + 1
     pub(crate) p: u64,
     p_vec: Vec<u64>, // p_0, p_1, ..., p_{k-1}, where k is the number of special modulus
-    q_vec: Vec<u64>, // q_0, q_1, ..., q_{L-1}, where L is maximal level
+    pub(crate) q_vec: Vec<u64>, // q_0, q_1, ..., q_{L-1}, where L is maximal level
     p_roots: Vec<u64>,
     q_roots: Vec<u64>,
     p_roots_inv: Vec<u64>,
@@ -248,18 +248,18 @@ impl Context {
     }
 
     fn generate_primitive_m_th_roots(&mut self) {
-        let m = self.n * 2;
+        let n = self.n;
         for i in 0..self.max_level {
             self.q_roots
-                .push(get_primitive_root_of_unity(m, self.q_vec[i]));
+                .push(get_primitive_root_of_unity(n, self.q_vec[i]));
             self.q_roots_inv
                 .push(inv_mod(self.q_roots[i], self.q_vec[i]));
             let mut power = 1;
             let mut power_inv = 1;
-            for j in 0..(self.n as usize) {
+            for j in 0..((n / 2) as usize) {
                 self.q_roots_pows[i][j] = power;
                 self.q_roots_pows_inv[i][j] = power_inv;
-                if j < (self.n - 1) as usize {
+                if j < (n / 2 - 1) as usize {
                     power = mul_mod(power, self.q_roots[i], self.q_vec[i]);
                     power_inv = mul_mod(power_inv, self.q_roots_inv[i], self.q_vec[i]);
                 }
@@ -268,15 +268,15 @@ impl Context {
 
         for i in 0..self.num_special_modulus {
             self.p_roots
-                .push(get_primitive_root_of_unity(m, self.p_vec[i]));
+                .push(get_primitive_root_of_unity(n, self.p_vec[i]));
             self.p_roots_inv
                 .push(inv_mod(self.p_roots[i], self.p_vec[i]));
             let mut power = 1;
             let mut power_inv = 1;
-            for j in 0..(self.n as usize) {
+            for j in 0..((n / 2) as usize) {
                 self.p_roots_pows[i][j] = power;
                 self.p_roots_pows_inv[i][j] = power_inv;
-                if j < (self.n - 1) as usize {
+                if j < (n / 2 - 1) as usize {
                     power = mul_mod(power, self.p_roots[i], self.p_vec[i]);
                     power_inv = mul_mod(power_inv, self.p_roots_inv[i], self.p_vec[i]);
                 }
@@ -517,7 +517,7 @@ impl Context {
         let mut rng = rand::thread_rng();
 
         let h = 64;
-        let idx = 0;
+        let mut idx = 0;
         while idx < h {
             let i = rng.gen_range(0..n);
             if res[i] == 0 {
@@ -528,6 +528,7 @@ impl Context {
                 for j in 0..k {
                     res[(j + l) * n + i] = if hwt >= 0 { 1 } else { self.p_vec[j] - 1 };
                 }
+                idx += 1;
             }
         }
         res
@@ -782,6 +783,7 @@ impl Context {
         }
     }
 
+    /// b = a - b
     pub fn sub2_inplace(&self, a: &[u64], b: &mut [u64], l: usize, k: usize) {
         let n = self.n as usize;
         for i in 0..l {
@@ -792,6 +794,26 @@ impl Context {
         for i in 0..k {
             for j in 0..n {
                 b[(i + l) * n + j] = sub_mod(a[(i + l) * n + j], b[(i + l) * n + j], self.p_vec[i]);
+            }
+        }
+    }
+
+    pub fn conjugate(&self, a: &[u64], l: usize) -> Vec<u64> {
+        let n = self.n as usize;
+        let mut res = vec![0; n * l];
+        for i in 0..l {
+            for j in 0..n {
+                res[i * n + j] = a[n - 1 - j + i * n];
+            }
+        }
+        res
+    }
+
+    pub fn conjugate_inplace(&self, a: &mut [u64], l: usize) {
+        let n = self.n as usize;
+        for i in 0..l {
+            for j in 0..n {
+                a.swap(j + n * i, n - 1 - j + i * n);
             }
         }
     }
@@ -861,5 +883,27 @@ mod tests {
         context.ntt(&mut x, l, k);
         context.inv_ntt(&mut x, l, k);
         assert_eq!(x, x_original);
+    }
+
+    #[test]
+    fn test_mult_ntt() {
+        let l = 1;
+        let k = 1;
+        let n = 1 << 15;
+        let context = Context::new(n as u64, l, k, 1 << 55, 3.2);
+        println!("q0: {}", context.q_vec[0]);
+
+        let length = n * (l + k);
+        let mut x = vec![0; length];
+        x[1] = 1;
+
+        let mut x_square_expected = vec![0; length];
+        x_square_expected[2] = 1;
+
+        context.ntt(&mut x, l, k);
+        let mut x_square = context.mul(&x, &x, l, k);
+        context.inv_ntt(&mut x_square, l, k);
+        context.inv_ntt(&mut x, l, k);
+        assert_eq!(x_square, x_square_expected);
     }
 }
