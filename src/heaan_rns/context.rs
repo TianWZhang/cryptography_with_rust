@@ -350,7 +350,6 @@ impl Context {
         let vi = v.im * self.p as f64;
 
         let mut res = vec![0; l * n];
-        assert_eq!(l, 1);
         for i in 0..l {
             res[i * n] = if vr >= 0.0 {
                 vr as u64
@@ -541,14 +540,14 @@ impl Context {
                 &mut x[i * n..(i + 1) * n],
                 &self.q_roots_pows[i],
                 self.q_vec[i],
-            )
+            );
         }
         for i in 0..k {
             ntt_radix2_u64(
                 &mut x[(i + l) * n..(i + l + 1) * n],
                 &self.p_roots_pows[i],
                 self.p_vec[i],
-            )
+            );
         }
     }
 
@@ -559,14 +558,14 @@ impl Context {
                 &mut x[i * n..(i + 1) * n],
                 &self.q_roots_pows_inv[i],
                 self.q_vec[i],
-            )
+            );
         }
         for i in 0..k {
             inv_ntt_radix2_u64(
                 &mut x[(i + l) * n..(i + l + 1) * n],
                 &self.p_roots_pows_inv[i],
                 self.p_vec[i],
-            )
+            );
         }
     }
 
@@ -810,12 +809,147 @@ impl Context {
     }
 
     pub fn conjugate_inplace(&self, a: &mut [u64], l: usize) {
-        let n = self.n as usize;
+        let ring_dim = self.n as usize;
         for i in 0..l {
-            for j in 0..n {
-                a.swap(j + n * i, n - 1 - j + i * n);
+            for n in 0..ring_dim {
+                a.swap(n + ring_dim * i, ring_dim - 1 - n + i * ring_dim);
             }
         }
+    }
+
+    /// Conv_{C_l->B}([a]_{C_l}) = [a + Q_l * e]_B, the input and output are of
+    /// coefficient form.
+    fn fast_basis_conversion_c2b(&self, a: &[u64], l: usize) -> Vec<u64> {
+        // the length of a is l * ring_dim
+        let mut res = vec![];
+        let ring_dim = self.n as usize;
+
+        let tmp: Vec<_> = (0..l)
+            .map(|i| {
+                (0..ring_dim).map(move |n| {
+                    mul_mod(
+                        a[n + i * ring_dim],
+                        self.q_hat_inv_mod_q[l - 1][i],
+                        self.q_vec[i],
+                    ) as u128
+                })
+            })
+            .flatten()
+            .collect();
+
+        for k in 0..self.num_special_modulus {
+            res.extend((0..ring_dim).map(|n| {
+                let mut sum: u128 = 0;
+                for i in 0..l {
+                    sum += tmp[n + i * ring_dim] * (self.q_hat_mod_p[l - 1][i][k] as u128);
+                }
+                (sum % (self.p_vec[k] as u128)) as u64
+            }));
+        }
+
+        // the length of res is num_special_modulus * ring_dim
+        res
+    }
+
+    /// Conv_{B->C_l}([a]_B) = [a + P * e]_{C_l}, the input and output are of
+    /// coefficient form.
+    fn fast_basis_conversion_b2c(&self, a: &[u64], l: usize) -> Vec<u64> {
+        // the length of a is num_special_modulus * ring_dim
+        let mut res = vec![];
+        let ring_dim = self.n as usize;
+
+        let tmp: Vec<_> = (0..self.num_special_modulus)
+            .map(|k| {
+                (0..ring_dim).map(move |n| {
+                    mul_mod(a[n + k * ring_dim], self.p_hat_inv_mod_p[k], self.p_vec[k]) as u128
+                })
+            })
+            .flatten()
+            .collect();
+
+        for i in 0..l {
+            res.extend((0..ring_dim).map(|n| {
+                let mut sum: u128 = 0;
+                for k in 0..self.num_special_modulus {
+                    sum += tmp[n + k * ring_dim] * (self.p_hat_mod_q[k][i] as u128);
+                }
+                (sum % (self.q_vec[i] as u128)) as u64
+            }));
+        }
+
+        // the length of res is l * ring_dim
+        res
+    }
+
+    /// The length of `a` is l * ring_dim. The input and output are of NTT form.
+    pub fn mod_up(&self, a: &mut [u64], l: usize) -> Vec<u64> {
+        let mut res = vec![];
+        res.extend(a.iter());
+
+        self.inv_ntt(a, l, 0);
+        let ring_dim = self.n as usize;
+        res.extend(self.fast_basis_conversion_c2b(a, l));
+        self.ntt(&mut res[l * ring_dim..], 0, self.num_special_modulus);
+
+        // the length of res is (l + k) * ring_dim
+        res
+    }
+
+    pub fn mod_down(&self, a: &[u64], l: usize, dl: usize) -> Vec<u64> {
+        let mut res = vec![];
+        let ring_dim = self.n as usize;
+        res.extend(&a[..(l - dl) * ring_dim]);
+        res
+    }
+
+    pub fn appro_modulus_reduction(&self, b_tilde: &[u64], l: usize) -> Vec<u64> {
+        let mut res = vec![];
+        let ring_dim = self.n as usize;
+        res.extend(b_tilde);
+        self.inv_ntt(&mut res, l, self.num_special_modulus);
+
+        let a_tilde = self.fast_basis_conversion_b2c(&res[l * ring_dim..], l);
+        for i in 0..l {
+            res.extend((0..ring_dim).map(|n| {
+                let tmp = sub_mod(
+                    b_tilde[n + i * ring_dim],
+                    a_tilde[n + i * ring_dim],
+                    self.q_vec[i],
+                );
+                mul_mod(tmp, self.p_inv_mod_q[i], self.q_vec[i])
+            }));
+        }
+        self.ntt(&mut res, l, 0);
+        res
+    }
+
+    pub fn rescale(&self, a: &mut [u64], l: usize) -> Vec<u64> {
+        let ring_dim = self.n as usize;
+        let mut res = vec![];
+        inv_ntt_radix2_u64(
+            &mut a[(l - 1) * ring_dim..l * ring_dim],
+            &self.q_roots_pows_inv[l - 1],
+            self.q_vec[l - 1],
+        );
+
+        for i in 0..l - 1 {
+            res.extend((0..ring_dim).map(|n| a[(l - 1) * ring_dim + n] % self.q_vec[i]));
+            ntt_radix2_u64(
+                &mut res[i * ring_dim..(i + 1) * ring_dim],
+                &self.q_roots_pows_inv[i],
+                self.q_vec[i],
+            );
+            for n in 0..ring_dim {
+                res[i * ring_dim + n] =
+                    sub_mod(a[i * ring_dim + n], res[i * ring_dim + n], self.q_vec[i]);
+                res[i * ring_dim + n] = mul_mod(
+                    res[i * ring_dim + n],
+                    self.q_inv_mod_q[l - 1][i],
+                    self.q_vec[i],
+                );
+            }
+        }
+        res
     }
 }
 
