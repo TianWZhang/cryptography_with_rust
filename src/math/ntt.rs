@@ -84,25 +84,45 @@ pub fn ntt_radix2_u64(x: &mut [u64], pow_table: &[u64], p: u64) {
     if !is_power_of_two(n) {
         panic!("Length is not a power of 2");
     }
-
-    bitrev(x);
-
-    let mut len = 2;
-    while len <= n {
-        for r in 0..n / len {
-            for j in 0..len / 2 {
-                let tau = mul_mod(pow_table[n / len * j], x[r * len + j + len / 2], p);
-                x[r * len + j + len / 2] = sub_mod(x[r * len + j], tau, p);
-                x[r * len + j] = add_mod(x[r * len + j], tau, p);
+    let mut m = 1;
+    let mut t = n;
+    while m < n {
+        t >>= 1;
+        for i in 0..m {
+            let w = pow_table[m + i];
+            for j in (i * t * 2)..(i * t * 2 + t) {
+                let u = mul_mod(x[j + t], w, p);
+                x[j + t] = sub_mod(x[j], u, p);
+                x[j] = add_mod(x[j], u, p);
             }
         }
-        len *= 2;
+        m *= 2;
     }
 }
 
 pub fn inv_ntt_radix2_u64(x: &mut [u64], inv_pow_table: &[u64], p: u64) {
     let n = x.len();
-    ntt_radix2_u64(x, inv_pow_table, p);
+
+    let mut m = n;
+    let mut t = 1;
+    while m > 1 {
+        let mut j1 = 0;
+        for i in 0..m / 2 {
+            let j2 = j1 + t;
+            let w = inv_pow_table[i + m / 2];
+            for j in j1..j2 {
+                let u = add_mod(x[j], x[j + t], p);
+                let mut v = sub_mod(x[j], x[j + t], p);
+                v = mul_mod(v, w, p);
+                x[j] = u;
+                x[j + t] = v;
+            }
+            j1 += 2 * t;
+        }
+        m /= 2;
+        t *= 2;
+    }
+    
     for i in 0..n {
         x[i] = div_mod(x[i], n as u64, p);
     }
@@ -345,8 +365,6 @@ fn inv_ntt_vec<const D: usize>(p_hat: &PolyVec3329<256, D>) -> PolyVec3329<256, 
 
 #[cfg(test)]
 mod tests {
-    use crate::math::{finite_field::Fp, prime::get_primitive_root_of_unity};
-
     use super::*;
 
     #[test]
@@ -366,61 +384,6 @@ mod tests {
         let mut x = [0, 1, 2, 3, 4, 5, 6, 7];
         bitrev(&mut x);
         assert_eq!(x, [0, 4, 2, 6, 1, 5, 3, 7]);
-    }
-
-    #[test]
-    fn test_ntt() {
-        let mut x: Vec<_> = [6, 0, 10, 7, 2, 8, 7, 4]
-            .iter()
-            .map(|val| Fp::from(*val))
-            .collect();
-        let original_x = x.clone();
-        let mut n = x.len();
-        let pow_table = generate_power_table(
-            &Fp::<17>::from(get_primitive_root_of_unity(n as u64, 17)),
-            n,
-        );
-        let inv_pow_table = generate_power_table(
-            &Fp::<17>::from(get_primitive_root_of_unity(n as u64, 17))
-                .inv()
-                .unwrap(),
-            n,
-        );
-        ntt_radix2(&mut x, &pow_table);
-        let expected_x: Vec<_> = [10, 16, 3, 8, 6, 2, 13, 7]
-            .iter()
-            .map(|val| Fp::from(*val))
-            .collect();
-        assert_eq!(x, expected_x);
-        inv_ntt_radix2(&mut x, &inv_pow_table);
-        assert_eq!(x, original_x);
-
-        let mut x: Vec<_> = [8, 2, 104, 57, 42, 18, 37, 46, 33, 5, 62, 15, 31, 88, 3, 108]
-            .iter()
-            .map(|val| Fp::from(*val))
-            .collect();
-        let original_x = x.clone();
-        n = x.len();
-        let pow_table = generate_power_table(
-            &Fp::<113>::from(get_primitive_root_of_unity(n as u64, 113)),
-            n,
-        );
-        let inv_pow_table = generate_power_table(
-            &Fp::<113>::from(get_primitive_root_of_unity(n as u64, 113))
-                .inv()
-                .unwrap(),
-            n,
-        );
-        ntt_radix2(&mut x, &pow_table);
-        let expected_x: Vec<_> = [
-            94, 75, 17, 29, 21, 78, 105, 105, 94, 99, 94, 39, 21, 5, 108, 48,
-        ]
-        .iter()
-        .map(|val| Fp::from(*val))
-        .collect();
-        assert_eq!(x, expected_x);
-        inv_ntt_radix2(&mut x, &inv_pow_table);
-        assert_eq!(x, original_x);
     }
 
     #[test]

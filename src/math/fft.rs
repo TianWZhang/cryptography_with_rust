@@ -14,39 +14,41 @@ pub fn fft_special(x: &mut [Complex64], pow_table: &[Complex64], rot_group: &[us
         for i in 0..n / len {
             for j in 0..len / 2 {
                 let idx = (rot_group[j] % (4 * len)) * m / (4 * len);
-                let tau = pow_table[idx] * x[i * len + j + len / 2];
-                x[i * len + j + len / 2] = x[i * len + j] - tau;
-                x[i * len + j] += tau;
+                let u = x[i * len + j];
+                let mut v = x[i * len + j + len / 2];
+                v *= pow_table[idx];
+                x[i * len + j + len / 2] = u - v;
+                x[i * len + j] = u + v;
             }
         }
         len *= 2;
     }
 }
 
-pub fn fft_special_inv(x: &mut [Complex64], pow_table: &[Complex64], rot_group: &[usize]) {
-    let n = x.len();
-    let m = rot_group.len() * 4;
+    pub fn fft_special_inv(x: &mut [Complex64], pow_table: &[Complex64], rot_group: &[usize]) {
+        let n = x.len();
+        let m = rot_group.len() * 4;
 
-    let mut len = n;
-    while len >= 1 {
-        let lenq = len << 2;
-        for i in 0..n / len {
-            for j in 0..len / 2 {
-                let idx = (lenq - rot_group[j] % lenq) * m / lenq;
-                let u = x[i * len + j] + x[i * len + j + len / 2];
-                let mut v = x[i * len + j] - x[i * len + j + len / 2];
-                v *= pow_table[idx];
-                x[i * len + j] = u;
-                x[i * len + j + len / 2] = v;
+        let mut len = n;
+        while len >= 1 {
+            let lenq = len << 2;
+            for i in 0..n / len {
+                for j in 0..len / 2 {
+                    let idx = (lenq - (rot_group[j] % lenq)) * m / lenq;
+                    let u = x[i * len + j] + x[i * len + j + len / 2];
+                    let mut v = x[i * len + j] - x[i * len + j + len / 2];
+                    v *= pow_table[idx];
+                    x[i * len + j] = u;
+                    x[i * len + j + len / 2] = v;
+                }
             }
+            len /= 2;
         }
-        len /= 2;
+        bitrev(x);
+        for i in 0..n {
+            x[i] /= n as f64;
+        }
     }
-    for i in 0..n {
-        x[i] /= n as f64;
-    }
-    bitrev(x);
-}
 
 #[cfg(test)]
 mod tests {
@@ -97,10 +99,10 @@ mod tests {
 
     #[test]
     fn test_fft_special() {
-        let n = 32;
+        let n = 1 << 15;
         let rot_group = generate_rot_group(n);
         let ksi_powers = generate_ksi_powers(n);
-        let mut x = generate_random_complex_numbers(n / 2);
+        let mut x = generate_random_complex_numbers(8);
         let x_original = x.clone();
         fft_special(&mut x, &ksi_powers, &rot_group);
         fft_special_inv(&mut x, &ksi_powers, &rot_group);

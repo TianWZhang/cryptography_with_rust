@@ -31,8 +31,7 @@ impl HeaanRnsScheme {
 
     fn add_encryption_key(&mut self, sk: &Sk) {
         let l = self.context.max_level;
-        // let ax = self.context.sample_uniform(l, 0);
-        let ax = vec![0; (self.context.n as usize) * l];
+        let ax = self.context.sample_uniform(l, 0);
 
         let mut ex = self.context.sample_guass(l, 0);
         self.context.ntt(&mut ex, l, 0);
@@ -48,11 +47,13 @@ impl HeaanRnsScheme {
         let l = self.context.max_level;
         let k = self.context.num_special_modulus;
 
-        // TODO: eval and equal?
-        let sx_sqaure = self.context.mul(&sk.sx, &sk.sx, l, 0);
+        let mut sx_sqaure = self.context.mul(&sk.sx, &sk.sx, l, 0);
+        self.context.mul_by_bigp(&mut sx_sqaure, l);
 
         let mut ex = self.context.sample_guass(l, k);
         self.context.ntt(&mut ex, l, k);
+        // here we set k = 0 because after multiplying sx_square with P,
+        // it's zero mod pi for every special prime
         self.context.add_inplace(&mut ex, &sx_sqaure, l, 0);
 
         let ax = self.context.sample_uniform(l, k);
@@ -63,12 +64,13 @@ impl HeaanRnsScheme {
             .insert(KeyType::Multiplication, Key::new(ax, bx));
     }
 
+    #[allow(dead_code)]
     fn add_conjugation_key(&mut self, sk: &Sk) {
         let l = self.context.max_level;
         let k = self.context.num_special_modulus;
 
-        // TODO: eval and equal?
-        let sx_conj = self.context.conjugate(&sk.sx, l);
+        let mut sx_conj = self.context.conjugate(&sk.sx, l);
+        self.context.mul_by_bigp(&mut sx_conj, l);
 
         let mut ex = self.context.sample_guass(l, k);
         self.context.ntt(&mut ex, l, k);
@@ -226,19 +228,19 @@ impl HeaanRnsScheme {
     }
 
     pub fn rescale_by(&self, ct: &Ciphertext, dl: usize) -> Ciphertext {
-        let mut ct = ct.clone();
+        let mut res = ct.clone();
         for _ in 0..dl {
-            let ax = self.context.rescale(&mut ct.ax, ct.l);
-            let bx = self.context.rescale(&mut ct.bx, ct.l);
-            ct = Ciphertext {
+            let ax = self.context.rescale(&res.ax, res.l);
+            let bx = self.context.rescale(&res.bx, res.l);
+            res = Ciphertext {
                 ax,
                 bx,
-                n: ct.n,
-                slots: ct.slots,
-                l: ct.l - 1
+                n: res.n,
+                slots: res.slots,
+                l: res.l - 1,
             };
         }
-        ct
+        res
     }
 
     pub fn rescale_to(&self, ct: &Ciphertext, l: usize) -> Ciphertext {
@@ -246,12 +248,81 @@ impl HeaanRnsScheme {
         self.rescale_by(ct, dl)
     }
 
+    pub fn mul(&self, ct1: &Ciphertext, ct2: &Ciphertext) -> Ciphertext {
+        assert_eq!(ct1.l, ct2.l);
+        let ax1bx2 = self.context.mul(&ct1.ax, &ct2.bx, ct1.l, 0);
+        let ax2bx1 = self.context.mul(&ct2.ax, &ct1.bx, ct2.l, 0);
+
+        let axax = self.context.mul(&ct1.ax, &ct2.ax, ct1.l, 0);
+        let axax = self.context.mod_up(&axax, ct1.l);
+        let bxbx = self.context.mul(&ct1.bx, &ct2.bx, ct1.l, 0);
+
+        let mul_key = self.key_map.get(&KeyType::Multiplication).unwrap();
+        // ax_mul.len() == ct1.n * (ct1.l + self.context.num_special_modulus)
+        let ax_mul = self.context.mul_key(&axax, &mul_key.ax, ct1.l);
+        let bx_mul = self.context.mul_key(&axax, &mul_key.bx, ct1.l);
+
+        let mut ax_mul = self.context.approx_modulus_reduction(&ax_mul, ct1.l);
+        // ax_mul.len() == ct1.n * ct1.l
+        let mut bx_mul = self.context.approx_modulus_reduction(&bx_mul, ct1.l);
+
+        // ax_mul = ax1 * bx2 + ax2 * bx1 + axax * mul_key.ax
+        self.context.add_inplace(&mut ax_mul, &ax1bx2, ct1.l, 0);
+        self.context.add_inplace(&mut ax_mul, &ax2bx1, ct1.l, 0);
+
+        // bx_mul = bx1 * bx2 + axax * mul_key.bx
+        self.context.add_inplace(&mut bx_mul, &bxbx, ct1.l, 0);
+
+        Ciphertext {
+            ax: ax_mul,
+            bx: bx_mul,
+            n: ct1.n,
+            slots: ct1.slots,
+            l: ct1.l,
+        }
+    }
+
+    pub fn mul_inplace(&self, ct1: &mut Ciphertext, ct2: &Ciphertext) {
+        assert_eq!(ct1.l, ct2.l);
+        let ax1bx2 = self.context.mul(&ct1.ax, &ct2.bx, ct1.l, 0);
+        let ax2bx1 = self.context.mul(&ct2.ax, &ct1.bx, ct2.l, 0);
+
+        let mut axax = self.context.mul(&ct1.ax, &ct2.ax, ct1.l, 0);
+        self.context.mod_up(&mut axax, ct1.l);
+        let bxbx = self.context.mul(&ct1.bx, &ct2.bx, ct1.l, 0);
+
+        let mul_key = self.key_map.get(&KeyType::Multiplication).unwrap();
+        let ax_mul = self.context.mul_key(&axax, &mul_key.ax, ct1.l);
+        let bx_mul = self.context.mul_key(&axax, &mul_key.bx, ct1.l);
+        let mut ax_mul = self.context.approx_modulus_reduction(&ax_mul, ct1.l);
+        let mut bx_mul = self.context.approx_modulus_reduction(&bx_mul, ct1.l);
+
+        // ax_mul = ax1 * bx2 + ax2 * bx1 + axax * mul_key.ax
+        self.context.add_inplace(&mut ax_mul, &ax1bx2, ct1.l, 0);
+        self.context.add_inplace(&mut ax_mul, &ax2bx1, ct1.l, 0);
+
+        // bx_mul = bx1 * bx2 + axax * mul_key.bx
+        self.context.add_inplace(&mut bx_mul, &bxbx, ct1.l, 0);
+
+        ct1.ax = ax_mul;
+        ct1.bx = bx_mul;
+    }
+
+    pub fn square(&self, ct: &Ciphertext) -> Ciphertext {
+        let ct1 = ct.clone();
+        self.mul(&ct, &ct1)
+    }
+
+    pub fn square_inplace(&self, ct: &mut Ciphertext) {
+        let ct1 = ct.clone();
+        self.mul_inplace(ct, &ct1)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::heaan_rns::utils::equal_up_to_epsilon;
+    use crate::heaan_rns::utils::{equal_up_to_epsilon, gen_random_complex_vector};
 
     #[test]
     fn test_encrypt_then_decrypt() {
@@ -275,5 +346,46 @@ mod tests {
         let decrypted = scheme.decrypt_ciphertext(&scheme.sk, &ciphertext);
         let v_decoded = scheme.decode(&decrypted);
         assert!(equal_up_to_epsilon(&v, &v_decoded, 0.000000000001));
+    }
+
+    #[test]
+    fn test_homomorphic_mul() {
+        let l = 2;
+        let k = 2;
+        let slots = 8;
+        let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
+        let scheme = HeaanRnsScheme::new(context);
+
+        let v1 = gen_random_complex_vector(slots);
+        let v2 = gen_random_complex_vector(slots);
+        let v_mul: Vec<_> = v1.iter().zip(v2.iter()).map(|(c1, c2)| c1 * c2).collect();
+
+        let ct1 = scheme.encrypt(&v1, l);
+        let ct2 = scheme.encrypt(&v2, l);
+        let ct_mul = scheme.mul(&ct1, &ct2);
+        let ct_mul = scheme.rescale_by(&ct_mul, 1);
+
+        let v_mul_decrypted = scheme.decrypt(&scheme.sk, &ct_mul);
+        assert!(equal_up_to_epsilon(&v_mul, &v_mul_decrypted, 0.0000001));
+    }
+
+    #[test]
+    fn test_homomorphic_add() {
+        let l = 3;
+        let k = 4;
+        let slots = 8;
+        let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
+        let scheme = HeaanRnsScheme::new(context);
+
+        let v1 = gen_random_complex_vector(slots);
+        let v2 = gen_random_complex_vector(slots);
+        let v_add: Vec<_> = v1.iter().zip(v2.iter()).map(|(c1, c2)| c1 + c2).collect();
+
+        let ct1 = scheme.encrypt(&v1, l);
+        let ct2 = scheme.encrypt(&v2, l);
+        let ct_add = scheme.add(&ct1, &ct2);
+
+        let v_add_decrypted = scheme.decrypt(&scheme.sk, &ct_add);
+        assert!(equal_up_to_epsilon(&v_add, &v_add_decrypted, 0.0000001));
     }
 }

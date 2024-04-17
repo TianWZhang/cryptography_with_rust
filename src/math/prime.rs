@@ -107,7 +107,7 @@ fn get_generator(p: u64) -> u64 {
     if p == 3329 {
         return 3;
     }
-    for i in 1..p {
+    for i in 2..p {
         if is_primitive_root(i, p) {
             return i;
         }
@@ -185,5 +185,11 @@ mod test {
         assert_eq!(get_generator(31489), 7);
         assert_eq!(get_generator(26881), 11);
         assert_eq!(get_generator(3329), 3);
+    }
+
+    #[test]
+    fn test_get_primitive_root_of_unity() {
+        assert_eq!(get_primitive_root_of_unity(16, 17), 3);
+        assert_eq!(get_primitive_root_of_unity(1 << 16, 2305843009214414849), 862911704619728619);
     }
 }

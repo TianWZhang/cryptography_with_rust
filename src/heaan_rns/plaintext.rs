@@ -7,9 +7,14 @@ pub struct Plaintext {
 
 #[derive(Debug, Clone)]
 pub struct Ciphertext {
+    /// (ax, bx) satisfies ax * s + bx \approx m
     pub(crate) ax: Vec<u64>,
+    /// bx is of the form: ex + m - ax * s
     pub(crate) bx: Vec<u64>,
-    pub(crate) n: usize,     // dimension of ring
-    pub(crate) slots: usize, // the length of plaintext vector
-    pub(crate) l: usize,     // the level of the ciphertext
+    /// dimension of ring
+    pub(crate) n: usize,
+    /// the length of plaintext vector
+    pub(crate) slots: usize,
+    /// the level of the ciphertext
+    pub(crate) l: usize,
 }

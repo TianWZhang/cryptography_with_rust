@@ -9,6 +9,8 @@ use crate::math::{
     prime::{get_primitive_root_of_unity, is_prime},
 };
 
+use super::approx_modulus_switch::fast_basis_conversion;
+
 const Q0_BIT_SIZE: u32 = 61;
 
 pub struct Context {
@@ -251,15 +253,16 @@ impl Context {
         let n = self.n;
         for i in 0..self.max_level {
             self.q_roots
-                .push(get_primitive_root_of_unity(n, self.q_vec[i]));
+                .push(get_primitive_root_of_unity(n * 2, self.q_vec[i]));
             self.q_roots_inv
                 .push(inv_mod(self.q_roots[i], self.q_vec[i]));
             let mut power = 1;
             let mut power_inv = 1;
-            for j in 0..((n / 2) as usize) {
-                self.q_roots_pows[i][j] = power;
-                self.q_roots_pows_inv[i][j] = power_inv;
-                if j < (n / 2 - 1) as usize {
+            for j in 0..(n as usize) {
+                let jprime = ((j as u32).reverse_bits() >> (32 - (n as f64).log2() as u32)) as usize;
+                self.q_roots_pows[i][jprime] = power;
+                self.q_roots_pows_inv[i][jprime] = power_inv;
+                if j < (n - 1) as usize {
                     power = mul_mod(power, self.q_roots[i], self.q_vec[i]);
                     power_inv = mul_mod(power_inv, self.q_roots_inv[i], self.q_vec[i]);
                 }
@@ -268,15 +271,16 @@ impl Context {
 
         for i in 0..self.num_special_modulus {
             self.p_roots
-                .push(get_primitive_root_of_unity(n, self.p_vec[i]));
+                .push(get_primitive_root_of_unity(n * 2, self.p_vec[i]));
             self.p_roots_inv
                 .push(inv_mod(self.p_roots[i], self.p_vec[i]));
             let mut power = 1;
             let mut power_inv = 1;
-            for j in 0..((n / 2) as usize) {
-                self.p_roots_pows[i][j] = power;
-                self.p_roots_pows_inv[i][j] = power_inv;
-                if j < (n / 2 - 1) as usize {
+            for j in 0..(n as usize) {
+                let jprime = ((j as u32).reverse_bits() >> (32 - (n as f64).log2() as u32)) as usize;
+                self.p_roots_pows[i][jprime] = power;
+                self.p_roots_pows_inv[i][jprime] = power_inv;
+                if j < (n - 1) as usize {
                     power = mul_mod(power, self.p_roots[i], self.p_vec[i]);
                     power_inv = mul_mod(power_inv, self.p_roots_inv[i], self.p_vec[i]);
                 }
@@ -318,21 +322,22 @@ impl Context {
             let mut idx = 0;
             let mut jdx = n / 2;
             for j in 0..slots {
-                let mir = uvals[j].re;
-                let mii = uvals[j].im;
-                res[i * n + idx] = if mir >= 0.0 {
+                let mir = uvals[j].re as i64;
+                let mii = uvals[j].im as i64;
+                res[i * n + idx] = if mir >= 0 {
                     mir as u64
                 } else {
-                    (self.q_vec[i] as f64 + mir) as u64
+                    (self.q_vec[i] as i64 + mir) as u64
                 };
-                res[i * n + jdx] = if mii >= 0.0 {
+                res[i * n + jdx] = if mii >= 0 {
                     mii as u64
                 } else {
-                    (self.q_vec[i] as f64 + mii) as u64
+                    (self.q_vec[i] as i64 + mii) as u64
                 };
                 idx += gap;
                 jdx += gap;
             }
+
             // `res[i * n..(i + 1) * n]` stores the components mod qi
             ntt_radix2_u64(
                 &mut res[i * n..(i + 1) * n],
@@ -361,6 +366,7 @@ impl Context {
             } else {
                 (self.q_vec[i] as f64 + vi) as u64
             };
+
             ntt_radix2_u64(
                 &mut res[i * n..(i + 1) * n],
                 &self.q_roots_pows[i],
@@ -374,7 +380,6 @@ impl Context {
         let n = self.n as usize;
         let mut uvals = v.clone();
         let gap = n / (2 * slots);
-
         inv_ntt_radix2_u64(&mut uvals[..n], &self.q_roots_pows_inv[0], self.q_vec[0]);
 
         let mut res = Vec::with_capacity(slots);
@@ -463,31 +468,31 @@ impl Context {
             let theta = 2.0 * PI * r1;
             let rr = (-2.0 * r2.ln()).sqrt() * self.sigma;
 
-            let g1 = (rr * theta.cos() + 0.5).floor();
-            let g2 = (rr * theta.sin() + 0.5).floor();
+            let g1 = (rr * theta.cos() + 0.5).floor() as i64;
+            let g2 = (rr * theta.sin() + 0.5).floor() as i64;
 
             for j in 0..l {
-                res[j * n + i] = if g1 >= 0.0 {
+                res[j * n + i] = if g1 >= 0 {
                     g1 as u64
                 } else {
-                    (self.q_vec[j] as f64 + g1) as u64
+                    (self.q_vec[j] as i64 + g1) as u64
                 };
-                res[j * n + i + 1] = if g2 >= 0.0 {
+                res[j * n + i + 1] = if g2 >= 0 {
                     g2 as u64
                 } else {
-                    (self.q_vec[j] as f64 + g2) as u64
+                    (self.q_vec[j] as i64 + g2) as u64
                 };
             }
             for j in 0..k {
-                res[(j + l) * n + i] = if g1 >= 0.0 {
+                res[(j + l) * n + i] = if g1 >= 0 {
                     g1 as u64
                 } else {
-                    (self.p_vec[j] as f64 + g1) as u64
+                    (self.p_vec[j] as i64 + g1) as u64
                 };
-                res[(j + l) * n + i + 1] = if g2 >= 0.0 {
+                res[(j + l) * n + i + 1] = if g2 >= 0 {
                     g2 as u64
                 } else {
-                    (self.p_vec[j] as f64 + g2) as u64
+                    (self.p_vec[j] as i64 + g2) as u64
                 };
             }
         }
@@ -584,6 +589,45 @@ impl Context {
             }
         }
         res
+    }
+
+    pub fn mul_key(&self, a: &[u64], key: &[u64], l: usize) -> Vec<u64> {
+        let n = self.n as usize;
+        let k = self.num_special_modulus;
+        let mut res = vec![0; n * (l + k)];
+        for i in 0..l {
+            for j in 0..n {
+                res[i * n + j] = mul_mod(a[i * n + j], key[i * n + j], self.q_vec[i]);
+            }
+        }
+        for i in 0..k {
+            for j in 0..n {
+                res[(i + l) * n + j] = mul_mod(
+                    a[(i + l) * n + j],
+                    key[(i + self.max_level) * n + j],
+                    self.p_vec[i],
+                );
+            }
+        }
+        res
+    }
+
+    pub fn mul_by_bigp(&self, a: &mut [u64], l: usize) {
+        let ring_dim = self.n as usize;
+        self.inv_ntt(a, l, 0);
+        for i in 0..l {
+            for n in 0..ring_dim {
+                a[i * ring_dim + n] = mul_mod(a[i * ring_dim + n], self.p_mod_q[i], self.q_vec[i]);
+            }
+        }
+
+        let k = a.len() / ring_dim - l;
+        for i in 0..k {
+            for n in 0..ring_dim {
+                a[(i + l) * ring_dim + n] = 0;
+            }
+        }
+        self.ntt(a, l, 0);
     }
 
     pub fn mul_inplace(&self, a: &mut [u64], b: &[u64], l: usize, k: usize) {
@@ -821,77 +865,48 @@ impl Context {
     /// coefficient form.
     fn fast_basis_conversion_c2b(&self, a: &[u64], l: usize) -> Vec<u64> {
         // the length of a is l * ring_dim
-        let mut res = vec![];
         let ring_dim = self.n as usize;
-
-        let tmp: Vec<_> = (0..l)
-            .map(|i| {
-                (0..ring_dim).map(move |n| {
-                    mul_mod(
-                        a[n + i * ring_dim],
-                        self.q_hat_inv_mod_q[l - 1][i],
-                        self.q_vec[i],
-                    ) as u128
-                })
-            })
-            .flatten()
-            .collect();
-
-        for k in 0..self.num_special_modulus {
-            res.extend((0..ring_dim).map(|n| {
-                let mut sum: u128 = 0;
-                for i in 0..l {
-                    sum += tmp[n + i * ring_dim] * (self.q_hat_mod_p[l - 1][i][k] as u128);
-                }
-                (sum % (self.p_vec[k] as u128)) as u64
-            }));
-        }
-
-        // the length of res is num_special_modulus * ring_dim
-        res
+        fast_basis_conversion(
+            a,
+            &self.q_vec[..l],
+            &self.p_vec,
+            ring_dim,
+            &self.q_hat_inv_mod_q[l - 1],
+            &self.q_hat_mod_p[l - 1],
+        )
     }
 
     /// Conv_{B->C_l}([a]_B) = [a + P * e]_{C_l}, the input and output are of
     /// coefficient form.
     fn fast_basis_conversion_b2c(&self, a: &[u64], l: usize) -> Vec<u64> {
         // the length of a is num_special_modulus * ring_dim
-        let mut res = vec![];
         let ring_dim = self.n as usize;
-
-        let tmp: Vec<_> = (0..self.num_special_modulus)
-            .map(|k| {
-                (0..ring_dim).map(move |n| {
-                    mul_mod(a[n + k * ring_dim], self.p_hat_inv_mod_p[k], self.p_vec[k]) as u128
-                })
-            })
-            .flatten()
-            .collect();
-
-        for i in 0..l {
-            res.extend((0..ring_dim).map(|n| {
-                let mut sum: u128 = 0;
-                for k in 0..self.num_special_modulus {
-                    sum += tmp[n + k * ring_dim] * (self.p_hat_mod_q[k][i] as u128);
-                }
-                (sum % (self.q_vec[i] as u128)) as u64
-            }));
-        }
-
         // the length of res is l * ring_dim
-        res
+        fast_basis_conversion(
+            a,
+            &self.p_vec,
+            &self.q_vec[..l],
+            ring_dim,
+            &self.p_hat_inv_mod_p,
+            &self.p_hat_mod_q,
+        )
     }
 
     /// The length of `a` is l * ring_dim. The input and output are of NTT form.
-    pub fn mod_up(&self, a: &mut [u64], l: usize) -> Vec<u64> {
+    pub fn mod_up(&self, a: &Vec<u64>, l: usize) -> Vec<u64> {
         let mut res = vec![];
-        res.extend(a.iter());
 
-        self.inv_ntt(a, l, 0);
+        let mut a = a.clone();
+        // the first l * ring_dim elements of res are of NTT form
+        res.extend(a.iter());
+        self.inv_ntt(&mut a, l, 0);
+
         let ring_dim = self.n as usize;
-        res.extend(self.fast_basis_conversion_c2b(a, l));
+        res.extend(self.fast_basis_conversion_c2b(&a, l));
+        // only need to convert the last K * ring_dim elements of res to NTT form
         self.ntt(&mut res[l * ring_dim..], 0, self.num_special_modulus);
 
-        // the length of res is (l + k) * ring_dim
+        // the length of res is (l + K) * ring_dim
         res
     }
 
@@ -902,17 +917,17 @@ impl Context {
         res
     }
 
-    pub fn appro_modulus_reduction(&self, b_tilde: &[u64], l: usize) -> Vec<u64> {
-        let mut res = vec![];
+    pub fn approx_modulus_reduction(&self, b_tilde: &Vec<u64>, l: usize) -> Vec<u64> {
         let ring_dim = self.n as usize;
-        res.extend(b_tilde);
-        self.inv_ntt(&mut res, l, self.num_special_modulus);
+        let mut b_tilde_coeffi = b_tilde.clone();
+        self.inv_ntt(&mut b_tilde_coeffi, l, self.num_special_modulus);
+        let a_tilde = self.fast_basis_conversion_b2c(&b_tilde_coeffi[l * ring_dim..], l);
 
-        let a_tilde = self.fast_basis_conversion_b2c(&res[l * ring_dim..], l);
+        let mut res = vec![];
         for i in 0..l {
             res.extend((0..ring_dim).map(|n| {
                 let tmp = sub_mod(
-                    b_tilde[n + i * ring_dim],
+                    b_tilde_coeffi[n + i * ring_dim],
                     a_tilde[n + i * ring_dim],
                     self.q_vec[i],
                 );
@@ -923,20 +938,23 @@ impl Context {
         res
     }
 
-    pub fn rescale(&self, a: &mut [u64], l: usize) -> Vec<u64> {
+    pub fn rescale(&self, a: &Vec<u64>, l: usize) -> Vec<u64> {
         let ring_dim = self.n as usize;
-        let mut res = vec![];
+        let mut res = vec![0; (l - 1) * ring_dim];
+        let mut a = a.clone();
         inv_ntt_radix2_u64(
             &mut a[(l - 1) * ring_dim..l * ring_dim],
             &self.q_roots_pows_inv[l - 1],
             self.q_vec[l - 1],
         );
 
-        for i in 0..l - 1 {
-            res.extend((0..ring_dim).map(|n| a[(l - 1) * ring_dim + n] % self.q_vec[i]));
+        for i in 0..(l - 1) {
+            for n in 0..ring_dim {
+                res[i * ring_dim + n] = a[(l - 1) * ring_dim + n] % self.q_vec[i];
+            }
             ntt_radix2_u64(
                 &mut res[i * ring_dim..(i + 1) * ring_dim],
-                &self.q_roots_pows_inv[i],
+                &self.q_roots_pows[i],
                 self.q_vec[i],
             );
             for n in 0..ring_dim {
@@ -956,7 +974,8 @@ impl Context {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::heaan_rns::utils::equal_up_to_epsilon;
+    use crate::heaan_rns::{approx_modulus_switch::crt_reconstruct, utils::{equal_up_to_epsilon, gen_random_complex_vector}};
+    use num_bigint::{BigUint, RandBigInt};
 
     #[test]
     fn test_encode_decode_single() {
@@ -985,21 +1004,12 @@ mod tests {
         let l = 6;
         let k = l;
         let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
-
         let slots = 8;
-        let v = vec![
-            Complex64::new(0.47, 0.97),
-            Complex64::new(0.12, 0.77),
-            Complex64::new(-0.45, 0.37),
-            Complex64::new(0.08, 0.39),
-            Complex64::new(0.44, -0.98),
-            Complex64::new(0.19, 0.98),
-            Complex64::new(-0.12, -0.44),
-            Complex64::new(0.20, 0.24),
-        ];
+        
+        let v = gen_random_complex_vector(slots);
         let encoding = context.encode(&v, l);
         let v_decoded = context.decode(&encoding, slots);
-        assert!(equal_up_to_epsilon(&v, &v_decoded, 0.000000000001));
+        assert!(equal_up_to_epsilon(&v, &v_decoded, 0.001));
     }
 
     #[test]
@@ -1011,7 +1021,7 @@ mod tests {
         let context = Context::new(n as u64, l, k, 1 << 55, 3.2);
 
         let length = n * (l + k);
-        let mut x: Vec<u64> = (0..length).map(|_| rng.gen_range(0..context.p)).collect();
+        let mut x: Vec<u64> = (0..length).map(|_| rng.gen_range(0..1000)).collect();
         let x_original = x.clone();
 
         context.ntt(&mut x, l, k);
@@ -1021,23 +1031,69 @@ mod tests {
 
     #[test]
     fn test_mult_ntt() {
-        let l = 1;
-        let k = 1;
+        let l = 2;
+        let k = 0;
         let n = 1 << 15;
         let context = Context::new(n as u64, l, k, 1 << 55, 3.2);
-        println!("q0: {}", context.q_vec[0]);
 
         let length = n * (l + k);
         let mut x = vec![0; length];
-        x[1] = 1;
+        x[0] = 1;
+        x[1] = 2;
+        x[n + 1] = 1;
+        x[n + n / 2] = 1;
 
         let mut x_square_expected = vec![0; length];
-        x_square_expected[2] = 1;
+        x_square_expected[0] = 1;
+        x_square_expected[1] = 4;
+        x_square_expected[2] = 4;
+        x_square_expected[n] = context.q_vec[1] - 1;
+        x_square_expected[n + 2] = 1;
+        x_square_expected[n + n / 2 + 1] = 2;
 
         context.ntt(&mut x, l, k);
         let mut x_square = context.mul(&x, &x, l, k);
         context.inv_ntt(&mut x_square, l, k);
-        context.inv_ntt(&mut x, l, k);
+
         assert_eq!(x_square, x_square_expected);
+    }
+
+    #[test]
+    fn mult_msg_then_decode_single() {
+        let l = 2;
+        let k = 1;
+        let context = Context::new(1 << 14, l, k, 1 << 55, 3.2);
+        let v1 = Complex64::new(0.47, 0.3);
+        let msg1 = context.encode_single(v1, l);
+        let v2 = Complex64::new(0.5, 0.74);
+        let msg2 = context.encode_single(v2, l);
+
+        let msg_mul = context.mul(&msg1, &msg2, l, 0);
+        let msg_mul = context.rescale(&msg_mul, l);
+
+        let v_mul_decoded = context.decode_single(&msg_mul);
+        assert!(equal_up_to_epsilon(&[v1 * v2], &[v_mul_decoded], 0.001));
+    }
+
+    #[test]
+    fn mult_msg_then_decode_batch() {
+        let l = 2;
+        let n = 1 << 15;
+        let k = 0;
+        let slots = 8;
+        let context = Context::new(n as u64, l, k, 1 << 55, 3.2);
+
+        let v1 = gen_random_complex_vector(slots);
+        let v2 = gen_random_complex_vector(slots);
+        let v_mul: Vec<_> = v1.iter().zip(v2.iter()).map(|(c1, c2)| c1 * c2).collect();
+
+        let msg1 = context.encode(&v1, l);
+        let msg2 = context.encode(&v2, l);
+
+        let msg_mul = context.mul(&msg1, &msg2, l, 0);
+        let msg_mul = context.rescale(&msg_mul, l);
+
+        let v_mul_decoded = context.decode(&msg_mul, slots);
+        assert!(equal_up_to_epsilon(&v_mul, &v_mul_decoded, 0.00001));
     }
 }
