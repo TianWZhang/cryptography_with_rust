@@ -190,6 +190,9 @@ mod test {
     #[test]
     fn test_get_primitive_root_of_unity() {
         assert_eq!(get_primitive_root_of_unity(16, 17), 3);
-        assert_eq!(get_primitive_root_of_unity(1 << 16, 2305843009214414849), 862911704619728619);
+        assert_eq!(
+            get_primitive_root_of_unity(1 << 16, 2305843009214414849),
+            862911704619728619
+        );
     }
 }

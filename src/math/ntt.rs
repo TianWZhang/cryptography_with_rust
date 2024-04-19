@@ -122,7 +122,7 @@ pub fn inv_ntt_radix2_u64(x: &mut [u64], inv_pow_table: &[u64], p: u64) {
         m /= 2;
         t *= 2;
     }
-    
+
     for i in 0..n {
         x[i] = div_mod(x[i], n as u64, p);
     }

@@ -1,15 +1,13 @@
-use num_complex::Complex64;
-use rand::Rng;
-use std::f64::consts::PI;
-
+use super::approx_modulus_switch::fast_basis_conversion;
 use crate::math::{
     fft::{fft_special, fft_special_inv},
     finite_field::{add_mod, inv_mod, mul_mod, neg_mod, sub_mod},
     ntt::{inv_ntt_radix2_u64, ntt_radix2_u64},
     prime::{get_primitive_root_of_unity, is_prime},
 };
-
-use super::approx_modulus_switch::fast_basis_conversion;
+use num_complex::Complex64;
+use rand::Rng;
+use std::f64::consts::PI;
 
 const Q0_BIT_SIZE: u32 = 61;
 
@@ -24,10 +22,10 @@ pub struct Context {
     q_roots: Vec<u64>,
     p_roots_inv: Vec<u64>,
     q_roots_inv: Vec<u64>,
-    p_roots_pows: Vec<Vec<u64>>,
-    q_roots_pows: Vec<Vec<u64>>,
-    p_roots_pows_inv: Vec<Vec<u64>>,
-    q_roots_pows_inv: Vec<Vec<u64>>,
+    p_root_pows: Vec<Vec<u64>>,
+    q_root_pows: Vec<Vec<u64>>,
+    p_root_pows_inv: Vec<Vec<u64>>,
+    q_root_pows_inv: Vec<Vec<u64>>,
     p_hat_mod_p: Vec<u64>,
     q_hat_mod_q: Vec<Vec<u64>>,
     p_hat_inv_mod_p: Vec<u64>,
@@ -57,10 +55,10 @@ impl Context {
             q_roots: Vec::with_capacity(l),
             p_roots_inv: Vec::with_capacity(k),
             q_roots_inv: Vec::with_capacity(l),
-            p_roots_pows: vec![vec![0; n as usize]; k],
-            q_roots_pows: vec![vec![0; n as usize]; l],
-            p_roots_pows_inv: vec![vec![0; n as usize]; k],
-            q_roots_pows_inv: vec![vec![0; n as usize]; l],
+            p_root_pows: vec![vec![0; n as usize]; k],
+            q_root_pows: vec![vec![0; n as usize]; l],
+            p_root_pows_inv: vec![vec![0; n as usize]; k],
+            q_root_pows_inv: vec![vec![0; n as usize]; l],
             p_hat_mod_p: vec![1; k],
             q_hat_mod_q: Vec::with_capacity(l),
             p_hat_inv_mod_p: vec![1; k],
@@ -259,9 +257,10 @@ impl Context {
             let mut power = 1;
             let mut power_inv = 1;
             for j in 0..(n as usize) {
-                let jprime = ((j as u32).reverse_bits() >> (32 - (n as f64).log2() as u32)) as usize;
-                self.q_roots_pows[i][jprime] = power;
-                self.q_roots_pows_inv[i][jprime] = power_inv;
+                let jprime =
+                    ((j as u32).reverse_bits() >> (32 - (n as f64).log2() as u32)) as usize;
+                self.q_root_pows[i][jprime] = power;
+                self.q_root_pows_inv[i][jprime] = power_inv;
                 if j < (n - 1) as usize {
                     power = mul_mod(power, self.q_roots[i], self.q_vec[i]);
                     power_inv = mul_mod(power_inv, self.q_roots_inv[i], self.q_vec[i]);
@@ -277,9 +276,10 @@ impl Context {
             let mut power = 1;
             let mut power_inv = 1;
             for j in 0..(n as usize) {
-                let jprime = ((j as u32).reverse_bits() >> (32 - (n as f64).log2() as u32)) as usize;
-                self.p_roots_pows[i][jprime] = power;
-                self.p_roots_pows_inv[i][jprime] = power_inv;
+                let jprime =
+                    ((j as u32).reverse_bits() >> (32 - (n as f64).log2() as u32)) as usize;
+                self.p_root_pows[i][jprime] = power;
+                self.p_root_pows_inv[i][jprime] = power_inv;
                 if j < (n - 1) as usize {
                     power = mul_mod(power, self.p_roots[i], self.p_vec[i]);
                     power_inv = mul_mod(power_inv, self.p_roots_inv[i], self.p_vec[i]);
@@ -341,7 +341,7 @@ impl Context {
             // `res[i * n..(i + 1) * n]` stores the components mod qi
             ntt_radix2_u64(
                 &mut res[i * n..(i + 1) * n],
-                &self.q_roots_pows[i],
+                &self.q_root_pows[i],
                 self.q_vec[i],
             );
         }
@@ -369,7 +369,7 @@ impl Context {
 
             ntt_radix2_u64(
                 &mut res[i * n..(i + 1) * n],
-                &self.q_roots_pows[i],
+                &self.q_root_pows[i],
                 self.q_vec[i],
             );
         }
@@ -380,7 +380,7 @@ impl Context {
         let n = self.n as usize;
         let mut uvals = v.clone();
         let gap = n / (2 * slots);
-        inv_ntt_radix2_u64(&mut uvals[..n], &self.q_roots_pows_inv[0], self.q_vec[0]);
+        inv_ntt_radix2_u64(&mut uvals[..n], &self.q_root_pows_inv[0], self.q_vec[0]);
 
         let mut res = Vec::with_capacity(slots);
         let mut idx = 0;
@@ -407,7 +407,7 @@ impl Context {
     pub fn decode_single(&self, v: &Vec<u64>) -> Complex64 {
         let n = self.n as usize;
         let mut uvals = v.clone();
-        inv_ntt_radix2_u64(&mut uvals[..n], &self.q_roots_pows_inv[0], self.q_vec[0]);
+        inv_ntt_radix2_u64(&mut uvals[..n], &self.q_root_pows_inv[0], self.q_vec[0]);
 
         let vr = if uvals[0] <= self.q_vec[0] / 2 {
             uvals[0] as f64 / self.p as f64
@@ -543,14 +543,14 @@ impl Context {
         for i in 0..l {
             ntt_radix2_u64(
                 &mut x[i * n..(i + 1) * n],
-                &self.q_roots_pows[i],
+                &self.q_root_pows[i],
                 self.q_vec[i],
             );
         }
         for i in 0..k {
             ntt_radix2_u64(
                 &mut x[(i + l) * n..(i + l + 1) * n],
-                &self.p_roots_pows[i],
+                &self.p_root_pows[i],
                 self.p_vec[i],
             );
         }
@@ -561,14 +561,14 @@ impl Context {
         for i in 0..l {
             inv_ntt_radix2_u64(
                 &mut x[i * n..(i + 1) * n],
-                &self.q_roots_pows_inv[i],
+                &self.q_root_pows_inv[i],
                 self.q_vec[i],
             );
         }
         for i in 0..k {
             inv_ntt_radix2_u64(
                 &mut x[(i + l) * n..(i + l + 1) * n],
-                &self.p_roots_pows_inv[i],
+                &self.p_root_pows_inv[i],
                 self.p_vec[i],
             );
         }
@@ -842,14 +842,11 @@ impl Context {
     }
 
     pub fn conjugate(&self, a: &[u64], l: usize) -> Vec<u64> {
-        let n = self.n as usize;
-        let mut res = vec![0; n * l];
-        for i in 0..l {
-            for j in 0..n {
-                res[i * n + j] = a[n - 1 - j + i * n];
-            }
-        }
-        res
+        let ring_dim = self.n as usize;
+        (0..l)
+            .map(|i| (0..ring_dim).map(move |n| a[i * ring_dim + ring_dim - 1 - n]))
+            .flatten()
+            .collect()
     }
 
     pub fn conjugate_inplace(&self, a: &mut [u64], l: usize) {
@@ -857,6 +854,53 @@ impl Context {
         for i in 0..l {
             for n in 0..ring_dim {
                 a.swap(n + ring_dim * i, ring_dim - 1 - n + i * ring_dim);
+            }
+        }
+    }
+
+    pub fn mul_by_x(&self, a: &[u64], l: usize) -> Vec<u64> {
+        let ring_dim = self.n as usize;
+        (0..l)
+            .map(|i| {
+                (0..ring_dim).map(move |n| {
+                    mul_mod(a[i * ring_dim + n], self.q_root_pows[i][n], self.q_vec[i])
+                })
+            })
+            .flatten()
+            .collect()
+    }
+
+    pub fn left_rot(&self, a: &Vec<u64>, l: usize, rot_slots: usize) -> Vec<u64> {
+        let ring_dim = self.n as usize;
+        let mut a = a.clone();
+        let mut res = vec![0; l * ring_dim];
+        self.inv_ntt(&mut a, l, 0);
+        let pow = self.rot_group[rot_slots];
+        for i in 0..l {
+            for n in 0..ring_dim {
+                let shift = mul_mod(n as u64, pow as u64, 2 * self.n) as usize;
+                if shift < ring_dim {
+                    res[i * ring_dim + shift] = a[i * ring_dim + n];
+                } else {
+                    res[i * ring_dim + shift - ring_dim] = self.q_vec[i] - a[i * ring_dim + n];
+                }
+            }
+        }
+        self.ntt(&mut res, l, 0);
+        res
+    }
+
+    pub fn left_rot_inplace(&self, a: &mut Vec<u64>, l: usize, rot_slots: usize) {
+        let ring_dim = self.n as usize;
+        let tmp = a.clone();
+        let idx = rot_slots % (ring_dim / 2);
+        let log_ring_dim = (ring_dim as f64).log2() as u32;
+        for n in 0..ring_dim {
+            let n_reversed = ((n as u32).reverse_bits() >> (32 - log_ring_dim)) as usize;
+            let mut index = (self.rot_group[idx] * (2 * n_reversed + 1)) & (2 * ring_dim - 1); // mod M
+            index = (((index as u32 - 1) >> 1).reverse_bits() >> (32 - log_ring_dim)) as usize;
+            for i in 0..l {
+                a[i * ring_dim + n] = tmp[i * ring_dim + index];
             }
         }
     }
@@ -944,7 +988,7 @@ impl Context {
         let mut a = a.clone();
         inv_ntt_radix2_u64(
             &mut a[(l - 1) * ring_dim..l * ring_dim],
-            &self.q_roots_pows_inv[l - 1],
+            &self.q_root_pows_inv[l - 1],
             self.q_vec[l - 1],
         );
 
@@ -954,7 +998,7 @@ impl Context {
             }
             ntt_radix2_u64(
                 &mut res[i * ring_dim..(i + 1) * ring_dim],
-                &self.q_roots_pows[i],
+                &self.q_root_pows[i],
                 self.q_vec[i],
             );
             for n in 0..ring_dim {
@@ -974,14 +1018,10 @@ impl Context {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::heaan_rns::{approx_modulus_switch::crt_reconstruct, utils::{equal_up_to_epsilon, gen_random_complex_vector}};
-    use num_bigint::{BigUint, RandBigInt};
+    use crate::heaan_rns::utils::{equal_up_to_epsilon, gen_random_complex_vector};
 
     #[test]
     fn test_encode_decode_single() {
-        // N: 16384
-        // q0: 2305843009214414849
-        // p: 36028797018963968
         let context = Context::new(1 << 14, 1, 1, 1 << 55, 3.2);
         let mut v = Complex64::new(0.47, 0.97);
         let mut encoding = context.encode_single(v, 1);
@@ -1005,7 +1045,7 @@ mod tests {
         let k = l;
         let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
         let slots = 8;
-        
+
         let v = gen_random_complex_vector(slots);
         let encoding = context.encode(&v, l);
         let v_decoded = context.decode(&encoding, slots);
@@ -1095,5 +1135,29 @@ mod tests {
 
         let v_mul_decoded = context.decode(&msg_mul, slots);
         assert!(equal_up_to_epsilon(&v_mul, &v_mul_decoded, 0.00001));
+    }
+
+    #[test]
+    fn test_left_rot() {
+        let l = 2;
+        let n = 1 << 15;
+        let k = 0;
+        let slots = 8;
+        let rot_slots = 3;
+        let context = Context::new(n as u64, l, k, 1 << 55, 3.2);
+
+        let mut v = gen_random_complex_vector(slots);
+        let msg = context.encode(&v, l);
+        let msg_left_rot = context.left_rot(&msg, l, rot_slots);
+        let v_left_rot= context.decode(&msg_left_rot, slots);
+        v.rotate_left(rot_slots);
+        assert!(equal_up_to_epsilon(&v, &v_left_rot, 0.0000001));
+
+        v = gen_random_complex_vector(slots);
+        let mut msg = context.encode(&v, l);
+        context.left_rot_inplace(&mut msg, l, rot_slots);
+        let v_left_rot= context.decode(&msg, slots);
+        v.rotate_left(rot_slots);
+        assert!(equal_up_to_epsilon(&v, &v_left_rot, 0.0000001));
     }
 }

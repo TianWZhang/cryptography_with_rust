@@ -287,8 +287,8 @@ impl HeaanRnsScheme {
         let ax1bx2 = self.context.mul(&ct1.ax, &ct2.bx, ct1.l, 0);
         let ax2bx1 = self.context.mul(&ct2.ax, &ct1.bx, ct2.l, 0);
 
-        let mut axax = self.context.mul(&ct1.ax, &ct2.ax, ct1.l, 0);
-        self.context.mod_up(&mut axax, ct1.l);
+        let axax = self.context.mul(&ct1.ax, &ct2.ax, ct1.l, 0);
+        let axax = self.context.mod_up(&axax, ct1.l);
         let bxbx = self.context.mul(&ct1.bx, &ct2.bx, ct1.l, 0);
 
         let mul_key = self.key_map.get(&KeyType::Multiplication).unwrap();
