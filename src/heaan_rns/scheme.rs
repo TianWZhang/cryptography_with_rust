@@ -11,7 +11,7 @@ pub struct HeaanRnsScheme {
     /// contains encryption, multiplication and conjugation keys
     pub key_map: HashMap<KeyType, Key>,
     /// contains left rotation keys
-    pub left_rot_key_map: HashMap<KeyType, Key>,
+    pub left_rot_key_map: HashMap<usize, Key>,
     pub sk: Sk,
 }
 
@@ -64,8 +64,7 @@ impl HeaanRnsScheme {
             .insert(KeyType::Multiplication, Key::new(ax, bx));
     }
 
-    #[allow(dead_code)]
-    fn add_conjugation_key(&mut self, sk: &Sk) {
+    pub fn add_conjugation_key(&mut self, sk: &Sk) {
         let l = self.context.max_level;
         let k = self.context.num_special_modulus;
 
@@ -81,6 +80,46 @@ impl HeaanRnsScheme {
         self.context.sub2_inplace(&ex, &mut bx, l, k);
 
         self.key_map.insert(KeyType::Conjugation, Key::new(ax, bx));
+    }
+
+    pub fn add_left_rot_key(&mut self, rot: usize) {
+        let l = self.context.max_level;
+        let k = self.context.num_special_modulus;
+
+        let mut sx_rot = self.context.left_rot(&self.sk.sx, l, rot);
+        self.context.mul_by_bigp(&mut sx_rot, l);
+
+        let mut ex = self.context.sample_guass(l, k);
+        self.context.ntt(&mut ex, l, k);
+        self.context.add_inplace(&mut ex, &sx_rot, l, 0);
+
+        let ax = self.context.sample_uniform(l, k);
+        let mut bx = self.context.mul(&ax, &self.sk.sx, l, k);
+        self.context.sub2_inplace(&ex, &mut bx, l, k);
+
+        self.left_rot_key_map.insert(rot, Key::new(ax, bx));
+    }
+
+    /// add left rotation keys for rot = 1, 2, 2^2, 2^3, ..., slots
+    pub fn add_left_rot_keys(&mut self, slots: usize) {
+        let mut i = 1;
+        while i <= slots {
+            if self.left_rot_key_map.get(&i).is_none() {
+                self.add_left_rot_key(i);
+            }
+            i *= 2;
+        }
+    }
+
+    pub fn add_right_rot_keys(&mut self, slots: usize) {
+        let mut i = 1;
+        while i <= slots {
+            let idx = slots - i;
+            if self.left_rot_key_map.get(&idx).is_none() {
+                self.add_left_rot_key(idx);
+            }
+            i *= 2;
+        }
     }
 
     pub fn encode(&self, v: &Vec<Complex64>, l: usize) -> Plaintext {
@@ -317,6 +356,56 @@ impl HeaanRnsScheme {
         let ct1 = ct.clone();
         self.mul_inplace(ct, &ct1)
     }
+
+    // (ax, bx) bx + ax * sx ->
+    // (ax_rot, bx_rot) bx_rot + ax_rot * sx_rot -> keyswitch
+    // ax_rot * (key.ax, key.bx) + (0, bx_rot) ->phase: bx_rot + ax_rot * key.bx + ax_rot * key.ax * sx
+    // = bx_rot + ax_rot * (key.bx + key.ax * sx) = bx_rot + ax_rot * sx_rot
+    fn left_rotate_by_pow2_inplace(&self, ct: &mut Ciphertext, rot_slots: usize) {
+        let key = self
+            .left_rot_key_map
+            .get(&rot_slots)
+            .expect("please add left rotation key first");
+
+        let ax_rot = self.context.left_rot(&ct.ax, ct.l, rot_slots);
+        let bx_rot = self.context.left_rot(&ct.bx, ct.l, rot_slots);
+        let ax_rot = self.context.mod_up(&ax_rot, ct.l);
+
+        let ax = self.context.mul_key(&ax_rot, &key.ax, ct.l);
+        let ax = self.context.approx_modulus_reduction(&ax, ct.l);
+        let bx = self.context.mul_key(&ax_rot, &key.bx, ct.l);
+        let mut bx = self.context.approx_modulus_reduction(&bx, ct.l);
+        self.context.add_inplace(&mut bx, &bx_rot, ct.l, 0);
+
+        ct.ax = ax;
+        ct.bx = bx;
+    }
+
+    pub fn left_rotate_inplace(&self, ct: &mut Ciphertext, rot_slots: usize) {
+        let rot_slots = rot_slots % ct.slots;
+        let log_rot_slots = (rot_slots as f64).log2() as usize;
+        for i in 0..=log_rot_slots {
+            if (rot_slots >> i) & 1 == 1 {
+                self.left_rotate_by_pow2_inplace(ct, 1 << i);
+            }
+        }
+    }
+
+    pub fn right_rotate_inplace(&self, ct: &mut Ciphertext, rot_slots: usize) {
+        let rot_slots = ct.slots - (rot_slots % ct.slots);
+        self.left_rotate_inplace(ct, rot_slots);
+    }
+
+    pub fn left_rotate(&self, ct: &Ciphertext, rot_slots: usize) -> Ciphertext {
+        let mut res = ct.clone();
+        self.left_rotate_inplace(&mut res, rot_slots);
+        res
+    }
+
+    pub fn right_rotate(&self, ct: &Ciphertext, rot_slots: usize) -> Ciphertext {
+        let rot_slots = ct.slots - (rot_slots % ct.slots);
+        self.left_rotate(ct, rot_slots)
+    }
 }
 
 #[cfg(test)]
@@ -387,5 +476,32 @@ mod tests {
 
         let v_add_decrypted = scheme.decrypt(&scheme.sk, &ct_add);
         assert!(equal_up_to_epsilon(&v_add, &v_add_decrypted, 0.0000001));
+    }
+
+    #[test]
+    fn test_homomorphic_rotate() {
+        let l = 3;
+        let k = l;
+        let slots = 8;
+        let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
+        let mut scheme = HeaanRnsScheme::new(context);
+        scheme.add_left_rot_keys(slots);
+        scheme.add_right_rot_keys(slots);
+
+        let rot_slots = 9;
+        let mut v = gen_random_complex_vector(slots);
+        let ct = scheme.encrypt(&v, l);
+        let ct_rotate = scheme.left_rotate(&ct, rot_slots);
+        let v_rot_decrypted = scheme.decrypt(&scheme.sk, &ct_rotate);
+        v.rotate_left(rot_slots % slots);
+        assert!(equal_up_to_epsilon(&v, &v_rot_decrypted, 0.0000001));
+
+        let rot_slots = 3;
+        let mut v = gen_random_complex_vector(slots);
+        let mut ct = scheme.encrypt(&v, l);
+        scheme.right_rotate_inplace(&mut ct, rot_slots);
+        let v_rot_decrypted = scheme.decrypt(&scheme.sk, &ct);
+        v.rotate_right(rot_slots % slots);
+        assert!(equal_up_to_epsilon(&v, &v_rot_decrypted, 0.0000001));
     }
 }

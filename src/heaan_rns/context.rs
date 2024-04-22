@@ -1149,14 +1149,14 @@ mod tests {
         let mut v = gen_random_complex_vector(slots);
         let msg = context.encode(&v, l);
         let msg_left_rot = context.left_rot(&msg, l, rot_slots);
-        let v_left_rot= context.decode(&msg_left_rot, slots);
+        let v_left_rot = context.decode(&msg_left_rot, slots);
         v.rotate_left(rot_slots);
         assert!(equal_up_to_epsilon(&v, &v_left_rot, 0.0000001));
 
         v = gen_random_complex_vector(slots);
         let mut msg = context.encode(&v, l);
         context.left_rot_inplace(&mut msg, l, rot_slots);
-        let v_left_rot= context.decode(&msg, slots);
+        let v_left_rot = context.decode(&msg, slots);
         v.rotate_left(rot_slots);
         assert!(equal_up_to_epsilon(&v, &v_left_rot, 0.0000001));
     }
