@@ -3,7 +3,7 @@ use crate::math::{
     fft::{fft_special, fft_special_inv},
     finite_field::{add_mod, inv_mod, mul_mod, neg_mod, sub_mod},
     ntt::{inv_ntt_radix2_u64, ntt_radix2_u64},
-    prime::{get_primitive_root_of_unity, is_prime},
+    prime::{gcd, get_primitive_root_of_unity, is_prime},
 };
 use num_complex::Complex64;
 use rand::Rng;
@@ -852,22 +852,51 @@ impl Context {
     pub fn conjugate_inplace(&self, a: &mut [u64], l: usize) {
         let ring_dim = self.n as usize;
         for i in 0..l {
-            for n in 0..ring_dim {
-                a.swap(n + ring_dim * i, ring_dim - 1 - n + i * ring_dim);
+            for n in 0..ring_dim / 2 {
+                a.swap(n + i * ring_dim, ring_dim - 1 - n + i * ring_dim);
             }
         }
     }
 
-    pub fn mul_by_x(&self, a: &[u64], l: usize) -> Vec<u64> {
+    pub fn mul_by_xpow(&self, a: &Vec<u64>, l: usize, deg: usize) -> Vec<u64> {
         let ring_dim = self.n as usize;
-        (0..l)
-            .map(|i| {
-                (0..ring_dim).map(move |n| {
-                    mul_mod(a[i * ring_dim + n], self.q_root_pows[i][n], self.q_vec[i])
-                })
-            })
-            .flatten()
-            .collect()
+        let mut deg = deg % (2 * ring_dim);
+        let neg = deg >= ring_dim;
+        deg %= ring_dim;
+
+        let mut res = a.clone();
+        self.inv_ntt(&mut res, l, 0);
+
+        let divisor = gcd(deg as u64, self.n) as usize;
+        let step = ring_dim / divisor;
+        for i in 0..l {
+            for j in 0..divisor {
+                let tmp = res[i * ring_dim + j];
+                let mut idx = j;
+                for _ in 0..(step - 1) {
+                    let next = idx as i64 - deg as i64;
+                    if next >= 0 {
+                        res[i * ring_dim + idx] = res[i * ring_dim + next as usize];
+                        idx = next as usize;
+                    } else {
+                        res[i * ring_dim + idx] = (self.q_vec[i] - res[i * ring_dim + (ring_dim as i64 + next) as usize]) % self.q_vec[i];
+                        idx = (ring_dim as i64 + next) as usize;
+                    }
+                }
+                res[i * ring_dim + idx] = tmp;
+            }
+        }
+
+        if neg {
+            for i in 0..l {
+                for n in 0..ring_dim {
+                    res[i *ring_dim + n] = (self.q_vec[i] - res[i * ring_dim + n]) % self.q_vec[i];
+                }
+            }
+        }
+        
+        self.ntt(&mut res, l, 0);
+        res
     }
 
     pub fn left_rot(&self, a: &Vec<u64>, l: usize, rot_slots: usize) -> Vec<u64> {
@@ -1159,5 +1188,50 @@ mod tests {
         let v_left_rot = context.decode(&msg, slots);
         v.rotate_left(rot_slots);
         assert!(equal_up_to_epsilon(&v, &v_left_rot, 0.0000001));
+    }
+
+    #[test]
+    fn test_conjugate() {
+        let l = 2;
+        let n = 1 << 15;
+        let k = 0;
+        let slots = 8;
+        let context = Context::new(n as u64, l, k, 1 << 55, 3.2);
+
+        let mut v = gen_random_complex_vector(slots);
+        let v_conj: Vec<_> = v.iter().map(|c| c.conj()).collect();
+        let msg = context.encode(&v, l);
+        let msg_conj = context.conjugate(&msg, l);
+        let v_conj_decoded = context.decode(&msg_conj, slots);
+        assert!(equal_up_to_epsilon(&v_conj, &v_conj_decoded, 0.0000001));
+
+        v = gen_random_complex_vector(slots);
+        let v_conj: Vec<_> = v.iter().map(|c| c.conj()).collect();
+        let mut msg = context.encode(&v, l);
+        context.conjugate_inplace(&mut msg, l);
+        let v_conj_decoded = context.decode(&msg, slots);
+        assert!(equal_up_to_epsilon(&v_conj, &v_conj_decoded, 0.0000001));
+    }
+
+    #[test]
+    fn test_mult_by_xpow() {
+        let l = 2;
+        let n = 1 << 15;
+        let k = 0;
+        let context = Context::new(n as u64, l, k, 1 << 55, 3.2);
+        
+        let length = n * (l + k);
+        let mut a = vec![0; length];
+        a[0] = 2;
+        a[1] = 1;
+        context.ntt(&mut a, l, k);
+
+        let mut a_times_xpow_expected = vec![0; length];
+        a_times_xpow_expected[1] = 2;
+        a_times_xpow_expected[2] = 1;
+        
+        let mut a_times_xpow = context.mul_by_xpow(&a, l, 1);
+        context.inv_ntt(&mut a_times_xpow, l, k);
+        assert_eq!(a_times_xpow, a_times_xpow_expected);
     }
 }

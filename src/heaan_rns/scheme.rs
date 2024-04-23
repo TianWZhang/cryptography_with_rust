@@ -64,11 +64,11 @@ impl HeaanRnsScheme {
             .insert(KeyType::Multiplication, Key::new(ax, bx));
     }
 
-    pub fn add_conjugation_key(&mut self, sk: &Sk) {
+    pub fn add_conjugation_key(&mut self) {
         let l = self.context.max_level;
         let k = self.context.num_special_modulus;
 
-        let mut sx_conj = self.context.conjugate(&sk.sx, l);
+        let mut sx_conj = self.context.conjugate(&self.sk.sx, l);
         self.context.mul_by_bigp(&mut sx_conj, l);
 
         let mut ex = self.context.sample_guass(l, k);
@@ -76,7 +76,7 @@ impl HeaanRnsScheme {
         self.context.add_inplace(&mut ex, &sx_conj, l, 0);
 
         let ax = self.context.sample_uniform(l, k);
-        let mut bx = self.context.mul(&ax, &sk.sx, l, k);
+        let mut bx = self.context.mul(&ax, &self.sk.sx, l, k);
         self.context.sub2_inplace(&ex, &mut bx, l, k);
 
         self.key_map.insert(KeyType::Conjugation, Key::new(ax, bx));
@@ -406,6 +406,58 @@ impl HeaanRnsScheme {
         let rot_slots = ct.slots - (rot_slots % ct.slots);
         self.left_rotate(ct, rot_slots)
     }
+
+    // (ax, bx) ->phase bx + ax * sx
+    // (ax_conj, bx_conj)
+    // ax_conj * key + (0, bx_conj) ->phase ax_conj * (key.bx + key.ax * sx_conj) + bx_conj = bx_conj + ax_conj * sx_conj
+    pub fn conjugate_inplace(&self, ct: &mut Ciphertext) {
+        self.context.conjugate_inplace(&mut ct.ax, ct.l);
+        self.context.conjugate_inplace(&mut ct.bx, ct.l);
+        let key = self.key_map.get(&KeyType::Conjugation).expect("please add conjugation key first");
+
+        let ax_conj = self.context.mod_up(&ct.ax, ct.l);
+        let ax_conj_times_key_ax = self.context.mul_key(&ax_conj, &key.ax, ct.l);
+        let ax_conj_times_key_bx = self.context.mul_key(&ax_conj, &key.bx, ct.l);
+
+        let ax = self.context.approx_modulus_reduction(&ax_conj_times_key_ax, ct.l);
+        let bx = self.context.approx_modulus_reduction(&ax_conj_times_key_bx, ct.l);
+        ct.ax = ax;
+        self.context.add_inplace(&mut ct.bx, &bx, ct.l, 0);
+    }
+
+    pub fn conjugate(&self, ct: &Ciphertext) -> Ciphertext {
+        let ax_conj = self.context.conjugate(&ct.ax, ct.l);
+        let bx_conj = self.context.conjugate(&ct.bx, ct.l);
+        let key = self.key_map.get(&KeyType::Conjugation).expect("please add conjugation key first");
+
+        let ax_conj = self.context.mod_up(&ax_conj, ct.l);
+        let ax_conj_times_key_ax = self.context.mul_key(&ax_conj, &key.ax, ct.l);
+        let ax_conj_times_key_bx = self.context.mul_key(&ax_conj, &key.bx, ct.l);
+
+        let ax = self.context.approx_modulus_reduction(&ax_conj_times_key_ax, ct.l);
+        let mut bx = self.context.approx_modulus_reduction(&ax_conj_times_key_bx, ct.l);
+        self.context.add_inplace(&mut bx, &bx_conj, ct.l, 0);
+
+        Ciphertext {
+            ax,
+            bx,
+            n: ct.n,
+            slots: ct.slots,
+            l: ct.l
+        }
+    }
+
+    pub fn imult(&self, ct: &Ciphertext) -> Ciphertext {
+        let ax = self.context.mul_by_xpow(&ct.ax, ct.l, self.context.n as usize / 2);
+        let bx = self.context.mul_by_xpow(&ct.bx, ct.l, self.context.n as usize / 2);
+        Ciphertext {
+            ax,
+            bx,
+            n: ct.n,
+            slots: ct.slots,
+            l: ct.l
+        }
+    }
 }
 
 #[cfg(test)]
@@ -503,5 +555,48 @@ mod tests {
         let v_rot_decrypted = scheme.decrypt(&scheme.sk, &ct);
         v.rotate_right(rot_slots % slots);
         assert!(equal_up_to_epsilon(&v, &v_rot_decrypted, 0.0000001));
+    }
+
+    #[test]
+    fn test_homomorphic_conjugation() {
+        let l = 2;
+        let k = l;
+        let slots = 8;
+        let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
+        let mut scheme = HeaanRnsScheme::new(context);
+        scheme.add_conjugation_key();
+
+        let v = gen_random_complex_vector(slots);
+        let v_conj: Vec<_> = v.iter().map(|c| c.conj()).collect();
+
+        let ct = scheme.encrypt(&v, l);
+        let ct_conj = scheme.conjugate(&ct);
+        let v_conj_decrypted = scheme.decrypt(&scheme.sk, &ct_conj);
+        assert!(equal_up_to_epsilon(&v_conj, &v_conj_decrypted, 0.0000001));
+
+        let v = gen_random_complex_vector(slots);
+        let v_conj: Vec<_> = v.iter().map(|c| c.conj()).collect();
+        let mut ct = scheme.encrypt(&v, l);
+        scheme.conjugate_inplace(&mut ct);
+        let v_conj_decrypted = scheme.decrypt(&scheme.sk, &ct);
+        assert!(equal_up_to_epsilon(&v_conj, &v_conj_decrypted, 0.0000001));
+    }
+
+    #[test]
+    fn test_imult() {
+        let l = 2;
+        let k = l;
+        let slots = 8;
+        let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
+        let scheme = HeaanRnsScheme::new(context);
+
+        let v = gen_random_complex_vector(slots);
+        let i = Complex64::new(0.0, 1.0);
+        let v_times_i: Vec<_> = v.iter().map(|c| c * i).collect();
+
+        let ct = scheme.encrypt(&v, l);
+        let ct_times_i = scheme.imult(&ct);
+        let v_times_i_decrypted = scheme.decrypt(&scheme.sk, &ct_times_i);
+        assert!(equal_up_to_epsilon(&v_times_i, &v_times_i_decrypted, 0.0000001));
     }
 }
