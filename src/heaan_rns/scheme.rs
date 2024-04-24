@@ -413,14 +413,21 @@ impl HeaanRnsScheme {
     pub fn conjugate_inplace(&self, ct: &mut Ciphertext) {
         self.context.conjugate_inplace(&mut ct.ax, ct.l);
         self.context.conjugate_inplace(&mut ct.bx, ct.l);
-        let key = self.key_map.get(&KeyType::Conjugation).expect("please add conjugation key first");
+        let key = self
+            .key_map
+            .get(&KeyType::Conjugation)
+            .expect("please add conjugation key first");
 
         let ax_conj = self.context.mod_up(&ct.ax, ct.l);
         let ax_conj_times_key_ax = self.context.mul_key(&ax_conj, &key.ax, ct.l);
         let ax_conj_times_key_bx = self.context.mul_key(&ax_conj, &key.bx, ct.l);
 
-        let ax = self.context.approx_modulus_reduction(&ax_conj_times_key_ax, ct.l);
-        let bx = self.context.approx_modulus_reduction(&ax_conj_times_key_bx, ct.l);
+        let ax = self
+            .context
+            .approx_modulus_reduction(&ax_conj_times_key_ax, ct.l);
+        let bx = self
+            .context
+            .approx_modulus_reduction(&ax_conj_times_key_bx, ct.l);
         ct.ax = ax;
         self.context.add_inplace(&mut ct.bx, &bx, ct.l, 0);
     }
@@ -428,14 +435,21 @@ impl HeaanRnsScheme {
     pub fn conjugate(&self, ct: &Ciphertext) -> Ciphertext {
         let ax_conj = self.context.conjugate(&ct.ax, ct.l);
         let bx_conj = self.context.conjugate(&ct.bx, ct.l);
-        let key = self.key_map.get(&KeyType::Conjugation).expect("please add conjugation key first");
+        let key = self
+            .key_map
+            .get(&KeyType::Conjugation)
+            .expect("please add conjugation key first");
 
         let ax_conj = self.context.mod_up(&ax_conj, ct.l);
         let ax_conj_times_key_ax = self.context.mul_key(&ax_conj, &key.ax, ct.l);
         let ax_conj_times_key_bx = self.context.mul_key(&ax_conj, &key.bx, ct.l);
 
-        let ax = self.context.approx_modulus_reduction(&ax_conj_times_key_ax, ct.l);
-        let mut bx = self.context.approx_modulus_reduction(&ax_conj_times_key_bx, ct.l);
+        let ax = self
+            .context
+            .approx_modulus_reduction(&ax_conj_times_key_ax, ct.l);
+        let mut bx = self
+            .context
+            .approx_modulus_reduction(&ax_conj_times_key_bx, ct.l);
         self.context.add_inplace(&mut bx, &bx_conj, ct.l, 0);
 
         Ciphertext {
@@ -443,20 +457,102 @@ impl HeaanRnsScheme {
             bx,
             n: ct.n,
             slots: ct.slots,
-            l: ct.l
+            l: ct.l,
         }
     }
 
     pub fn imult(&self, ct: &Ciphertext) -> Ciphertext {
-        let ax = self.context.mul_by_xpow(&ct.ax, ct.l, self.context.n as usize / 2);
-        let bx = self.context.mul_by_xpow(&ct.bx, ct.l, self.context.n as usize / 2);
+        let ax = self
+            .context
+            .mul_by_xpow(&ct.ax, ct.l, self.context.n as usize / 2);
+        let bx = self
+            .context
+            .mul_by_xpow(&ct.bx, ct.l, self.context.n as usize / 2);
         Ciphertext {
             ax,
             bx,
             n: ct.n,
             slots: ct.slots,
-            l: ct.l
+            l: ct.l,
         }
+    }
+
+    pub fn add_const(&self, ct: &Ciphertext, constant: f64) -> Ciphertext {
+        let const_encoded = (constant.abs() * self.context.p as f64) as u64;
+        let ax = ct.ax.clone();
+        let bx = if constant >= 0.0 {
+            self.context.add_const(&ct.bx, const_encoded, ct.l, 0)
+        } else {
+            self.context.sub_const(&ct.bx, const_encoded, ct.l, 0)
+        };
+        Ciphertext {
+            ax,
+            bx,
+            n: ct.n,
+            slots: ct.slots,
+            l: ct.l,
+        }
+    }
+
+    pub fn add_const_inplace(&self, ct: &mut Ciphertext, constant: f64) {
+        let const_encoded = (constant.abs() * self.context.p as f64) as u64;
+        if constant >= 0.0 {
+            self.context
+                .add_const_inplace(&mut ct.bx, const_encoded, ct.l, 0);
+        } else {
+            self.context
+                .sub_const_inplace(&mut ct.bx, const_encoded, ct.l, 0);
+        }
+    }
+
+    pub fn mul_const(&self, ct: &Ciphertext, constant: f64) -> Ciphertext {
+        let const_encoded = (constant.abs() * self.context.p as f64) as u64;
+        let mut ax = self.context.mul_const(&ct.ax, const_encoded, ct.l, 0);
+        let mut bx = self.context.mul_const(&ct.bx, const_encoded, ct.l, 0);
+        if constant <= 0.0 {
+            self.context.negate_inplace(&mut ax, ct.l, 0);
+            self.context.negate_inplace(&mut bx, ct.l, 0);
+        }
+
+        Ciphertext {
+            ax,
+            bx,
+            n: ct.n,
+            slots: ct.slots,
+            l: ct.l,
+        }
+    }
+
+    pub fn mul_const_inplace(&self, ct: &mut Ciphertext, constant: f64) {
+        let const_encoded = (constant.abs() * self.context.p as f64) as u64;
+        self.context
+            .mul_const_inplace(&mut ct.ax, const_encoded, ct.l, 0);
+        self.context
+            .mul_const_inplace(&mut ct.bx, const_encoded, ct.l, 0);
+        if constant <= 0.0 {
+            self.context.negate_inplace(&mut ct.ax, ct.l, 0);
+            self.context.negate_inplace(&mut ct.bx, ct.l, 0);
+        }
+    }
+
+    pub fn mod_down_by(&self, ct: &Ciphertext, dl: usize) -> Ciphertext {
+        assert!(dl < ct.l);
+        let ax = self.context.mod_down_by(&ct.ax, ct.l, dl);
+        let bx = self.context.mod_down_by(&ct.bx, ct.l, dl);
+        Ciphertext {
+            ax,
+            bx,
+            n: ct.n,
+            slots: ct.slots,
+            l: ct.l - dl,
+        }
+    }
+
+    pub fn mod_down_by_inplace(&self, ct: &mut Ciphertext, dl: usize) {
+        assert!(dl < ct.l);
+        self.context.mod_down_by_inplace(&mut ct.ax, ct.l, dl);
+        self.context.mod_down_by_inplace(&mut ct.bx, ct.l, dl);
+        ct.l -= dl;
     }
 }
 
@@ -597,6 +693,78 @@ mod tests {
         let ct = scheme.encrypt(&v, l);
         let ct_times_i = scheme.imult(&ct);
         let v_times_i_decrypted = scheme.decrypt(&scheme.sk, &ct_times_i);
-        assert!(equal_up_to_epsilon(&v_times_i, &v_times_i_decrypted, 0.0000001));
+        assert!(equal_up_to_epsilon(
+            &v_times_i,
+            &v_times_i_decrypted,
+            0.0000001
+        ));
+    }
+
+    #[test]
+    fn test_add_const() {
+        let l = 2;
+        let k = l;
+        let slots = 8;
+        let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
+        let scheme = HeaanRnsScheme::new(context);
+
+        let v = gen_random_complex_vector(slots);
+        let constant = 0.67;
+        let v_add_const: Vec<_> = v.iter().map(|c| c + constant).collect();
+        let ct = scheme.encrypt(&v, l);
+        let ct_add_const = scheme.add_const(&ct, constant);
+        let v_add_const_decrypted = scheme.decrypt(&scheme.sk, &ct_add_const);
+        assert!(equal_up_to_epsilon(
+            &v_add_const,
+            &v_add_const_decrypted,
+            0.0000001
+        ));
+
+        let v = gen_random_complex_vector(slots);
+        let constant = -0.34;
+        let v_add_const: Vec<_> = v.iter().map(|c| c + constant).collect();
+        let mut ct = scheme.encrypt(&v, l);
+        scheme.add_const_inplace(&mut ct, constant);
+        let v_add_const_decrypted = scheme.decrypt(&scheme.sk, &ct);
+        assert!(equal_up_to_epsilon(
+            &v_add_const,
+            &v_add_const_decrypted,
+            0.0000001
+        ));
+    }
+
+    #[test]
+    fn test_mul_const() {
+        let l = 2;
+        let k = l;
+        let slots = 8;
+        let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
+        let scheme = HeaanRnsScheme::new(context);
+
+        let v = gen_random_complex_vector(slots);
+        let constant = 0.67;
+        let v_mul_const: Vec<_> = v.iter().map(|c| c * constant).collect();
+        let ct = scheme.encrypt(&v, l);
+        let ct_mul_const = scheme.mul_const(&ct, constant);
+        let ct_mul_const = scheme.rescale_by(&ct_mul_const, 1);
+        let v_mul_const_decrypted = scheme.decrypt(&scheme.sk, &ct_mul_const);
+        assert!(equal_up_to_epsilon(
+            &v_mul_const,
+            &v_mul_const_decrypted,
+            0.0000001
+        ));
+
+        let v = gen_random_complex_vector(slots);
+        let constant = -0.34;
+        let v_mul_const: Vec<_> = v.iter().map(|c| c * constant).collect();
+        let mut ct = scheme.encrypt(&v, l);
+        scheme.mul_const_inplace(&mut ct, constant);
+        let ct = scheme.rescale_by(&ct, 1);
+        let v_mul_const_decrypted = scheme.decrypt(&scheme.sk, &ct);
+        assert!(equal_up_to_epsilon(
+            &v_mul_const,
+            &v_mul_const_decrypted,
+            0.0000001
+        ));
     }
 }

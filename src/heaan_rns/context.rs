@@ -879,7 +879,9 @@ impl Context {
                         res[i * ring_dim + idx] = res[i * ring_dim + next as usize];
                         idx = next as usize;
                     } else {
-                        res[i * ring_dim + idx] = (self.q_vec[i] - res[i * ring_dim + (ring_dim as i64 + next) as usize]) % self.q_vec[i];
+                        res[i * ring_dim + idx] = (self.q_vec[i]
+                            - res[i * ring_dim + (ring_dim as i64 + next) as usize])
+                            % self.q_vec[i];
                         idx = (ring_dim as i64 + next) as usize;
                     }
                 }
@@ -890,11 +892,11 @@ impl Context {
         if neg {
             for i in 0..l {
                 for n in 0..ring_dim {
-                    res[i *ring_dim + n] = (self.q_vec[i] - res[i * ring_dim + n]) % self.q_vec[i];
+                    res[i * ring_dim + n] = (self.q_vec[i] - res[i * ring_dim + n]) % self.q_vec[i];
                 }
             }
         }
-        
+
         self.ntt(&mut res, l, 0);
         res
     }
@@ -983,11 +985,16 @@ impl Context {
         res
     }
 
-    pub fn mod_down(&self, a: &[u64], l: usize, dl: usize) -> Vec<u64> {
+    pub(crate) fn mod_down_by(&self, a: &[u64], l: usize, dl: usize) -> Vec<u64> {
         let mut res = vec![];
         let ring_dim = self.n as usize;
         res.extend(&a[..(l - dl) * ring_dim]);
         res
+    }
+
+    pub(crate) fn mod_down_by_inplace(&self, a: &mut Vec<u64>, l: usize, dl: usize) {
+        let ring_dim = self.n as usize;
+        a.truncate((l - dl) * ring_dim);
     }
 
     pub fn approx_modulus_reduction(&self, b_tilde: &Vec<u64>, l: usize) -> Vec<u64> {
@@ -1219,7 +1226,7 @@ mod tests {
         let n = 1 << 15;
         let k = 0;
         let context = Context::new(n as u64, l, k, 1 << 55, 3.2);
-        
+
         let length = n * (l + k);
         let mut a = vec![0; length];
         a[0] = 2;
@@ -1229,7 +1236,7 @@ mod tests {
         let mut a_times_xpow_expected = vec![0; length];
         a_times_xpow_expected[1] = 2;
         a_times_xpow_expected[2] = 1;
-        
+
         let mut a_times_xpow = context.mul_by_xpow(&a, l, 1);
         context.inv_ntt(&mut a_times_xpow, l, k);
         assert_eq!(a_times_xpow, a_times_xpow_expected);
