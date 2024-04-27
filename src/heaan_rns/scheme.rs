@@ -6,6 +6,9 @@ use super::{
 use num_complex::Complex64;
 use std::collections::HashMap;
 
+pub const SIGMOID: [f64; 11] = [ 1.0 / 2.0, 1.0 / 4.0, 0.0, -1.0 / 48.0, 0.0, 1.0 / 480.0, 0.0, -17.0 / 80640.0, 0.0, 31.0 / 1451520.0, 0.0 ];
+pub const EXPONENT: [f64; 11] = [ 1.0, 1.0, 0.5, 1.0 / 6.0, 1.0 / 24.0, 1.0 / 120.0, 1.0 / 720.0, 1.0 / 5040.0, 1.0 / 40320.0, 1.0 / 362880.0, 1.0 / 3628800.0 ];
+
 pub struct HeaanRnsScheme {
     pub context: Context,
     /// contains encryption, multiplication and conjugation keys
@@ -554,6 +557,76 @@ impl HeaanRnsScheme {
         self.context.mod_down_by_inplace(&mut ct.bx, ct.l, dl);
         ct.l -= dl;
     }
+
+    // (a0, a1, a2, a3) -> (a0 + a1, a1 + a2, a2 + a3, a3 + a0) -> (sum, sum, sum, sum)
+    pub fn slots_sum(&self, ct: &Ciphertext) -> Ciphertext {
+        let mut res = ct.clone();
+        let mut i = 1;
+        while i < ct.slots {
+            let rot = self.left_rotate(&res, i);
+            self.add_inplace(&mut res, &rot);
+            i <<= 1;
+        }
+        res
+    }
+
+    fn power_of_2s(&self, ct: &Ciphertext, log_degree: usize) -> Vec<Ciphertext> {
+        let mut res = Vec::with_capacity(log_degree + 1);
+        res.push(ct.clone());
+        for i in 1..=log_degree {
+            let tmp = self.square(&res[i - 1]);
+            let tmp = self.rescale_by(&tmp, 1);
+            res.push(tmp);
+        }
+        res
+    }
+
+    fn powers(&self, ct: &Ciphertext, degree: usize) -> Vec<Ciphertext> {
+        let mut res = Vec::with_capacity(degree);
+        let log_degree = (degree as f64).log2() as usize;
+        let cpow2s = self.power_of_2s(ct, log_degree);
+
+        for i in 0..log_degree {
+            // initially, idx = 2^i - 1
+            // idx \in [2^i - 1, 2^{i + 1} - 1)
+            let powi = 1 << i;
+            res.push(cpow2s[i].clone());
+            for j in 0..(powi - 1) {
+                // res[j] = ct^{j+1}
+                let mut tmp = self.mod_down_by(&res[j], res[j].l - cpow2s[i].l);
+                self.mul_inplace(&mut tmp, &cpow2s[i]);
+                // res[idx] = ct^{j+1+2^i}, idx == 2^i + j
+                tmp = self.rescale_by(&tmp, 1);
+                res.push(tmp);
+            }
+        }
+        res.push(cpow2s[log_degree].clone());
+        let deg2 = 1 << log_degree;
+        for i in 0..(degree - deg2) {
+            let mut tmp = self.mod_down_by(&res[i], res[i].l - cpow2s[log_degree].l);
+            self.mul_inplace(&mut tmp, &cpow2s[log_degree]);
+            tmp = self.rescale_by(&tmp, 1);
+            res.push(tmp);
+        }
+        res
+    }
+
+    pub fn homomorphic_function(&self, ct: &Ciphertext, coeffs: &[f64], degree: usize) -> Ciphertext {
+        let cpows = self.powers(ct, degree);
+        let mut res = self.mul_const(&cpows[0], coeffs[1]);
+
+        for i in 1..degree {
+            if coeffs[i + 1].abs() > 1e-27 {
+                let aixi = self.mul_const(&cpows[i], coeffs[i + 1]);
+                let oldl = res.l;
+                self.mod_down_by_inplace(&mut res, oldl - aixi.l);
+                self.add_inplace(&mut res, &aixi);
+            }
+        }
+        let mut res = self.rescale_by(&res, 1);
+        self.add_const_inplace(&mut res, coeffs[0]);
+        res
+    }
 }
 
 #[cfg(test)]
@@ -765,6 +838,60 @@ mod tests {
             &v_mul_const,
             &v_mul_const_decrypted,
             0.0000001
+        ));
+    }
+
+    #[test]
+    fn test_slots_sum() {
+        let l = 2;
+        let k = l;
+        let slots = 8;
+        let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
+        let mut scheme = HeaanRnsScheme::new(context);
+        scheme.add_left_rot_keys(slots);
+
+        let v = gen_random_complex_vector(slots);
+        let slots_sum = v.iter().fold(Complex64::new(0.0, 0.0), |acc, x| acc + x);
+        let v_slots_sum = vec![slots_sum; slots];
+
+        let ct = scheme.encrypt(&v, l);
+        let ct_slots_sum = scheme.slots_sum(&ct);
+        let v_slots_sum_decrypted = scheme.decrypt(&scheme.sk, &ct_slots_sum);
+        assert!(equal_up_to_epsilon(
+            &v_slots_sum,
+            &v_slots_sum_decrypted,
+            0.0000001
+        ));
+    }
+
+    #[test]
+    fn test_homomorphic_function() {
+        let l = 8;
+        let k = l + 1;
+        let slots = 8;
+        let context = Context::new(1 << 15, l, k, 1 << 55, 3.2);
+        let scheme = HeaanRnsScheme::new(context);
+
+        let v = gen_random_complex_vector(slots);
+        let v_sigmoid: Vec<_> = v.iter().map(|c| c.exp() / (1.0 + c.exp())).collect();
+        let ct = scheme.encrypt(&v, l);
+        let ct_sigmoid = scheme.homomorphic_function(&ct, &SIGMOID, 5);
+        let v_sigmoid_decrypted = scheme.decrypt(&scheme.sk, &ct_sigmoid);
+        assert!(equal_up_to_epsilon(
+            &v_sigmoid,
+            &v_sigmoid_decrypted,
+            0.01
+        ));
+
+        let v = gen_random_complex_vector(slots);
+        let v_exp: Vec<_> = v.iter().map(|c| c.exp()).collect();
+        let ct = scheme.encrypt(&v, l);
+        let ct_exp = scheme.homomorphic_function(&ct, &EXPONENT, 5);
+        let v_exp_decrypted = scheme.decrypt(&scheme.sk, &ct_exp);
+        assert!(equal_up_to_epsilon(
+            &v_exp,
+            &v_exp_decrypted,
+            0.01
         ));
     }
 }
